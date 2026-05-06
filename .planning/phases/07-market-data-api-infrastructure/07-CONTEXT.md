@@ -33,19 +33,22 @@ Three new API keys needed. Storage split:
 
 ### Agentic Architecture (D-02)
 
-**Hybrid: Yahoo Finance pre-fetched + all others tool-based**
+**Pure tool-based: all data sources are Claude tools. Claude is the hub.**
 
-Yahoo Finance continues to run as a pre-fetch for all 4 modes (existing Phase 6 behavior — market snapshot always injected into Claude context).
+Yahoo Finance is no longer pre-fetched. It becomes a tool like all other data sources — Claude calls it when the user's message warrants market data. Nothing is automatic.
 
-All new data sources become Claude `tool_use` definitions:
+All data sources are Claude `tool_use` definitions:
+- Yahoo Finance (`fetchFuturesSnapshot`) — existing marketData.ts helper, wrapped as a tool
 - Alpha Vantage MCP (`https://mcp.alphavantage.co/mcp?apikey=KEY`) — all AV endpoints as tools
 - FRED API endpoints — defined as Claude tools
 - Polygon.io endpoints — defined as Claude tools
 - Gemini search — refactored from hardcoded calls into a Claude tool for all 4 modes
 
-Claude decides which tools to call based on the user's message. Nothing else is automatic. This is a pure agentic loop: Claude → tool call → result → Claude response.
+Claude decides which tools to call based on the user's message. Nothing is pre-fetched. This is a pure agentic loop: Claude → tool call → result → Claude response.
 
 **Gemini refactor:** Phase 6 hardcoded mode-specific Gemini queries (for market-pulse and strategy-review) are replaced with Claude-driven adaptive search. Claude generates the search query based on context. Gemini search is now available to all 4 modes (Analyze, Chat, Market Pulse, Strategy Review) — Claude uses it when relevant.
+
+**Historical coaching memory (from Phase 6) is unchanged.** Session index, temporal sampling (buildCoachingContextSelection), behavior ledger, milestone log, streaks, journal memory, weekly/monthly summaries — all continue exactly as Phase 6 designed. Phase 7 adds tool-based market data alongside this existing memory system.
 
 ### Data Fetch Policy (D-03)
 
@@ -62,16 +65,25 @@ Claude decides which tools to call based on the user's message. Nothing else is 
 
 Cache layer: **Next.js `unstable_cache`** — survives between requests within a deployment, no new dependencies, compatible with Vercel serverless.
 
-Cache keys: per-endpoint + per-symbol (e.g., `av:RSI:ES:daily` as the key)
+**Cache philosophy:** Cache only what was actually called. Market data has no real-time subscriptions — data doesn't change intraday in a meaningful way for this use case. The cache's job is to prevent calling the same API twice for the same data in the same day. A cache hit means zero cost, zero latency, zero budget impact.
 
-TTL tiers:
-| Data type | TTL | Endpoints |
+**Re-fetch policy:** Only call an API again when BOTH are true:
+1. The cached data's TTL has expired (data may have been updated since last fetch), AND
+2. The user or Claude explicitly requests that data again
+
+If the cache is still valid, Claude receives the cached response — no new API call regardless of how many times the user asks about the same symbol or indicator.
+
+**Cache keys:** per-endpoint + per-symbol + per-timeframe (e.g., `av:RSI:ES:daily`, `fred:DFF`, `polygon:ES1!:bars:10d`)
+
+**TTL tiers:**
+| Data type | TTL | Rationale |
 |-----------|-----|-----------|
-| Economic / daily data | 24hr | TREASURY_YIELD, FEDERAL_FUNDS_RATE, TIME_SERIES_DAILY/WEEKLY/MONTHLY |
-| Technical indicators + news | 1hr | RSI, MACD, BBANDS, VWAP, NEWS_SENTIMENT, EARNINGS_CALENDAR |
-| Market status | 15min | MARKET_STATUS |
+| Economic / macro / daily prices | 24hr | TREASURY_YIELD, FEDERAL_FUNDS_RATE, TIME_SERIES_DAILY/WEEKLY/MONTHLY, FRED series, Polygon daily bars — updated once a day at most |
+| Technical indicators + news sentiment | 24hr | RSI/MACD/BBANDS/VWAP on daily bars, NEWS_SENTIMENT — no real-time subscription, daily resolution is sufficient |
+| Market status | 15min | MARKET_STATUS — open/closed/pre-market changes throughout the day |
+| Earnings calendar | 24hr | EARNINGS_CALENDAR — daily resolution |
 
-Polygon and FRED calls also cached using the same TTL tiers (daily bars = 24hr, macro data = 24hr).
+**Result:** Under normal use, the total number of AV API calls per user per day = number of distinct endpoint+symbol combinations requested, capped by the 24hr TTL. Repeated questions about ES RSI throughout the day = 1 AV call, not N.
 
 ### Rate Limit Handling (D-05)
 
@@ -126,14 +138,16 @@ Continuous contracts + historical bars + open interest for CME futures:
 
 ### Mode Behavior (D-09)
 
-All 4 modes share the same baseline (Yahoo Finance pre-fetch) and the same tool palette. Claude decides what to call.
+All 4 modes share the same tool palette. Nothing is pre-fetched. Claude decides what to call based on the user's message.
 
-| Mode | Pre-fetched (always) | Tools available on-demand |
-|------|---------------------|--------------------------|
-| Analyze | Yahoo Finance market snapshot | AV, FRED, Polygon, Gemini search |
-| Chat | Yahoo Finance market snapshot | AV, FRED, Polygon, Gemini search |
-| Market Pulse | Yahoo Finance market snapshot | AV, FRED, Polygon, Gemini search |
-| Strategy Review | Yahoo Finance market snapshot | AV, FRED, Polygon, Gemini search |
+| Mode | Pre-fetched | Tools available on-demand |
+|------|-------------|--------------------------|
+| Analyze | — | Yahoo Finance, AV, FRED, Polygon, Gemini search |
+| Chat | — | Yahoo Finance, AV, FRED, Polygon, Gemini search |
+| Market Pulse | — | Yahoo Finance, AV, FRED, Polygon, Gemini search |
+| Strategy Review | — | Yahoo Finance, AV, FRED, Polygon, Gemini search |
+
+Claude's coaching memory (session index, behavior ledger, milestone log, streaks, journal memory, weekly/monthly summaries) continues to be injected into the system context on every call — this is not market data and is not affected by the tool-based architecture change.
 
 ### Route Architecture (D-10)
 
@@ -142,11 +156,12 @@ No new route files — everything goes in `app/api/coach/route.ts` (existing pat
 Changes to route.ts:
 1. Read `av_api_key` and `polygon_api_key` from Supabase user session (same pattern as `claude_api_key`)
 2. Read `FRED_API_KEY` from server env vars
-3. Build Claude tool definitions for: AV MCP endpoints, FRED series, Polygon endpoints, Gemini search
-4. Pass tools to Claude in the `@anthropic-ai/sdk` call
-5. Handle tool_use responses: execute the tool call, return result to Claude, loop until final response
-6. Cache tool results via `unstable_cache` with appropriate TTL
+3. Build Claude tool definitions for: **Yahoo Finance** (wrap existing `fetchFuturesSnapshot`), AV MCP endpoints, FRED series, Polygon endpoints, Gemini search
+4. Remove the Yahoo Finance pre-fetch block — no longer called unconditionally
+5. Pass all tools to Claude in the `@anthropic-ai/sdk` call alongside the existing memory context
+6. Handle tool_use responses: execute the tool call, check cache first (`unstable_cache`), call API on cache miss, return result to Claude, loop until final response
 7. Remove hardcoded Gemini mode-specific queries; replace with Gemini-as-tool
+8. The existing memory context injection (session index, behavior ledger, streaks, journal memory, etc.) is NOT a tool call — it continues to be injected into the system prompt directly on every call
 
 </decisions>
 
@@ -184,7 +199,7 @@ Changes to route.ts:
 ### Established Patterns
 - **API key storage**: `user_metadata` via Supabase, read server-side in route.ts from session — `av_api_key` and `polygon_api_key` follow `claude_api_key` pattern exactly.
 - **Tool-use loop**: `@anthropic-ai/sdk` supports multi-turn tool_use; route.ts needs to handle the agentic loop (call Claude → get tool_use → execute tool → call Claude again with result → repeat until final response).
-- **Yahoo Finance pre-fetch**: `fetchFuturesSnapshot(watchlistSymbols)` in marketData.ts — no changes needed here, continues as-is.
+- **Yahoo Finance tool**: `fetchFuturesSnapshot(watchlistSymbols)` in marketData.ts — wrap this existing helper as a Claude tool definition. Remove the unconditional pre-fetch call in route.ts.
 - **Graceful degradation**: Phase 6 pattern — if any provider fails, Claude proceeds with remaining context. Same pattern applies to AV/FRED/Polygon tool failures.
 - **Fire-and-forget memory**: `supabase.auth.updateUser` for memory writes — no changes to this pattern.
 
