@@ -2,11 +2,25 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { useTrades } from "../../lib/TradesContext"
 import { useAuthContext } from "@/app/components/AuthProvider"
 import type { ChatMessage, CoachingEntry } from "../../lib/types"
 
 const STRATEGY_KEY = "edge_v5_strategy_text"
+
+// Detect watchlist intent from user's message — don't rely on AI command formatting
+function parseWatchlistIntent(text: string): { add: string[]; remove: string[] } {
+  const lower = text.toLowerCase()
+  const isAdd = /\b(add|track|watch|monitor)\b/.test(lower)
+  const isRemove = /\b(remove|unwatch|stop\s+watching|stop\s+tracking|delete)\b/.test(lower)
+  if (!isAdd && !isRemove) return { add: [], remove: [] }
+
+  const STOP = new Set(["I", "A", "MY", "ADD", "THE", "TO", "FROM", "AND", "IN", "ON", "FOR", "IS", "IT", "AT", "ME", "WATCH", "TRACK"])
+  const tickers = (text.match(/\b[A-Z]{1,6}(?:=F)?\b/g) ?? []).filter(t => !STOP.has(t))
+  return isRemove ? { add: [], remove: tickers } : { add: tickers, remove: [] }
+}
 
 function genId() {
   return Math.random().toString(36).slice(2, 9)
@@ -36,11 +50,6 @@ const MODES = [
     label: "Strategy Review",
     icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
   },
-  {
-    id: "chat" as const,
-    label: "Ask Anything",
-    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
-  },
 ]
 
 const MODE_LABELS: Record<string, string> = {
@@ -68,6 +77,22 @@ function relativeTime(iso: string) {
   return `${Math.floor(d / 365)}y ago`
 }
 
+/* ─── Markdown renderer for assistant messages ───────────────── */
+const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  p: ({ children }) => <p style={{ marginBottom: "0.5em", lineHeight: 1.65 }}>{children}</p>,
+  h1: ({ children }) => <p style={{ fontWeight: 700, color: "var(--text)", marginBottom: "0.4em", marginTop: "0.9em", fontSize: "0.88em", letterSpacing: "0.06em", textTransform: "uppercase" }}>{children}</p>,
+  h2: ({ children }) => <p style={{ fontWeight: 600, color: "var(--text)", marginBottom: "0.35em", marginTop: "0.8em", fontSize: "0.85em", letterSpacing: "0.05em", textTransform: "uppercase" }}>{children}</p>,
+  h3: ({ children }) => <p style={{ fontWeight: 600, color: "var(--text)", marginBottom: "0.25em", marginTop: "0.6em", fontSize: "0.85em" }}>{children}</p>,
+  ul: ({ children }) => <ul style={{ paddingLeft: "1.1em", marginBottom: "0.5em", listStyleType: "disc" }}>{children}</ul>,
+  ol: ({ children }) => <ol style={{ paddingLeft: "1.1em", marginBottom: "0.5em", listStyleType: "decimal" }}>{children}</ol>,
+  li: ({ children }) => <li style={{ marginBottom: "0.2em", lineHeight: 1.6 }}>{children}</li>,
+  strong: ({ children }) => <strong style={{ color: "var(--text)", fontWeight: 600 }}>{children}</strong>,
+  em: ({ children }) => <em style={{ color: "var(--text2)" }}>{children}</em>,
+  code: ({ children }) => <code className="mono" style={{ background: "rgba(56,189,248,0.1)", color: "var(--accent)", padding: "0.1em 0.35em", borderRadius: 4, fontSize: "0.88em" }}>{children}</code>,
+  hr: () => <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "0.75em 0" }} />,
+  blockquote: ({ children }) => <blockquote style={{ borderLeft: "2px solid var(--border-accent)", paddingLeft: "0.75em", margin: "0.5em 0", color: "var(--text2)" }}>{children}</blockquote>,
+}
+
 /* ─── Message bubble ─────────────────────────────────────────── */
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === "user"
@@ -84,8 +109,14 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         )}
       </div>
       <div className={`flex-1 rounded-2xl px-4 py-3 text-sm ${isUser ? "rounded-tr-sm" : "rounded-tl-sm"}`}
-        style={{ maxWidth: "85%", background: isUser ? "linear-gradient(135deg, var(--accent3), rgba(56,189,248,0.06))" : "rgba(255,255,255,0.05)", border: `1px solid ${isUser ? "var(--border-accent)" : "var(--border)"}`, color: "var(--text)", lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {msg.content}
+        style={{ maxWidth: "85%", background: isUser ? "linear-gradient(135deg, var(--accent3), rgba(56,189,248,0.06))" : "rgba(255,255,255,0.05)", border: `1px solid ${isUser ? "var(--border-accent)" : "var(--border)"}`, color: "var(--text2)", lineHeight: 1.65, wordBreak: "break-word" }}>
+        {isUser ? (
+          <span style={{ color: "var(--text)", whiteSpace: "pre-wrap" }}>{msg.content}</span>
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+            {msg.content}
+          </ReactMarkdown>
+        )}
         <div className="mt-1.5 label-upper" style={{ color: "var(--text3)" }}>
           {new Date(msg.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
         </div>
@@ -163,8 +194,10 @@ function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: ()
       {expanded && (
         <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="pt-3 text-sm rounded-xl p-3"
-            style={{ color: "var(--text2)", lineHeight: 1.7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {entry.fullContent || entry.marketSnapshot || entry.priority || "No content available."}
+            style={{ color: "var(--text2)", lineHeight: 1.7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", wordBreak: "break-word" }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {entry.fullContent || entry.marketSnapshot || entry.priority || "No content available."}
+            </ReactMarkdown>
           </div>
           <button onClick={onArchive}
             className="mono text-xs px-3 py-1.5 rounded-lg transition-colors"
@@ -174,6 +207,16 @@ function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: ()
         </div>
       )}
     </div>
+  )
+}
+
+function isWatchlistSession(entry: CoachingEntry): boolean {
+  const t = (entry.title || "").toLowerCase()
+  const c = (entry.fullContent || entry.priority || "").toLowerCase()
+  // Any title mentioning "watchlist" is a management session — real analysis titles never contain it
+  return (
+    /\bwatchlist\b/.test(t) ||
+    (/acknowledged/.test(c) && /watchlist/.test(c))
   )
 }
 
@@ -207,7 +250,7 @@ function HistoryView() {
     )
   }
 
-  const sorted = [...coachingHistory].reverse()
+  const sorted = [...coachingHistory].reverse().filter(e => !isWatchlistSession(e))
   const active = sorted.filter(e => !e.archived)
   const archived = sorted.filter(e => e.archived)
 
@@ -292,7 +335,7 @@ function HistoryView() {
 
 /* ─── Chat tab view ──────────────────────────────────────────── */
 function ChatView() {
-  const { trades, coachingHistory, addCoachingEntry, patternSummary, updatePatternSummary } = useTrades()
+  const { trades, coachingHistory, addCoachingEntry, patternSummary, updatePatternSummary, watchlist, updateWatchlist } = useTrades()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -321,6 +364,18 @@ function ChatView() {
     setLoading(true)
     setError(null)
 
+    // Apply watchlist changes immediately from user's message — don't wait for AI command
+    const clientIntent = parseWatchlistIntent(text)
+    if (clientIntent.add.length || clientIntent.remove.length) {
+      updateWatchlist(clientIntent.add, clientIntent.remove)
+    }
+    // Build the effective watchlist for this request (React state won't update until next render)
+    const removeSet = new Set(clientIntent.remove)
+    const effectiveWatchlist = [
+      ...watchlist.filter(s => !removeSet.has(s)),
+      ...clientIntent.add.filter(s => !watchlist.includes(s)),
+    ]
+
     try {
       const res = await fetch("/api/coach", {
         method: "POST",
@@ -333,6 +388,7 @@ function ChatView() {
           patternSummary,
           strategyText: (typeof window !== "undefined" ? localStorage.getItem(STRATEGY_KEY) : null) ?? "",
           sessionId: genSessionId(),
+          watchlist: effectiveWatchlist,
         }),
       })
 
@@ -344,6 +400,11 @@ function ChatView() {
 
       // Update rolling pattern summary
       if (data.newPatternSummary) updatePatternSummary(data.newPatternSummary)
+
+      // Apply watchlist mutations from AI response
+      if (data.watchlistAdd?.length || data.watchlistRemove?.length) {
+        updateWatchlist(data.watchlistAdd || [], data.watchlistRemove || [])
+      }
 
       // Save persistent history entry
       const title = data.sessionTitle
@@ -394,14 +455,19 @@ function ChatView() {
         <div className="p-4 space-y-4 pb-2">
 
           {/* Memory status */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-1">
             <p className="label-upper" style={{ color: "var(--text3)" }}>
               {patternSummary ? `Memory active · ${coachingHistory.length} sessions` : "Memory building…"}
             </p>
+            {watchlist.length > 0 && (
+              <p className="label-upper" style={{ color: "var(--text3)" }}>
+                Watching: {watchlist.join(", ")}
+              </p>
+            )}
           </div>
 
           {/* Mode chips */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 justify-center">
             {MODES.map(mode => (
               <button key={mode.id} onClick={() => handleModeClick(mode.id)} disabled={loading}
                 className="flex items-center gap-1.5 mono text-xs px-3 py-2 rounded-xl transition-all duration-150 disabled:opacity-40"
@@ -471,7 +537,7 @@ function ChatView() {
           </button>
         </div>
         <p className="text-center label-upper mt-2" style={{ color: "var(--text3)", fontSize: 9 }}>
-          Gemini 2.5 Flash · Reads your strategy &amp; journal · Memory: {patternSummary ? "active" : "building"}
+          Gemini 2.5 Flash · strategy &amp; journal context · memory: {patternSummary ? "active" : "building"}
         </p>
       </div>
     </div>
@@ -482,63 +548,30 @@ function ChatView() {
 function PreviewCoachView() {
   return (
     <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 130px)" }}>
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-4 pb-2">
-
-          {/* Mode chips — disabled */}
-          <div className="flex flex-wrap gap-2">
-            {MODES.map(mode => (
-              <div key={mode.id}
-                className="flex items-center gap-1.5 mono text-xs px-3 py-2 rounded-xl"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", color: "var(--text2)", opacity: 0.35, cursor: "not-allowed", pointerEvents: "none" }}>
-                {mode.icon}
-                {mode.label}
-              </div>
-            ))}
-          </div>
-
-          {/* Sample AI response */}
-          <div className="flex gap-2.5">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-              style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.3)" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-              </svg>
+      <div className="flex-1 flex flex-col" style={{ position: "relative" }}>
+        {/* Mode chips — disabled, visible above the overlay */}
+        <div className="px-4 pt-4 pb-3 flex flex-wrap gap-2 justify-center" style={{ flexShrink: 0 }}>
+          {MODES.map(mode => (
+            <div key={mode.id}
+              className="flex items-center gap-1.5 mono text-xs px-3 py-2 rounded-xl"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", color: "var(--text2)", opacity: 0.35, cursor: "not-allowed", pointerEvents: "none" }}>
+              {mode.icon}
+              {mode.label}
             </div>
-            <div style={{ flex: 1, maxWidth: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: "16px", borderTopLeftRadius: 4, padding: 16, color: "var(--text)", lineHeight: 1.65, position: "relative" }}>
-              <span className="mono"
-                style={{ position: "absolute", top: 10, right: 12, fontSize: 9, fontWeight: 600, textTransform: "uppercase", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", color: "var(--text3)", borderRadius: 4, padding: "2px 6px", letterSpacing: "0.06em" }}>
-                DEMO
-              </span>
-              <p style={{ fontSize: 14 }}>
-                {`Journal Analysis · 12 trades reviewed\n\nKey pattern identified: Your NQ long setups during the 9:30–10:15 AM EST session carry a 67% win rate, but you're cutting winners at +1.2R on average when your strategy targets +2R. This is costing roughly +4.8R per week.\n\nPriority adjustment: Set a partial exit at +1.5R (half position) and trail the remainder to your next liquidity level. This protects profit while letting runners develop.\n\nMomentum: ↑ Positive — discipline score improving over the last 8 sessions.`}
-              </p>
-              <div className="mono mt-2" style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text3)" }}>
-                JOURNAL ANALYSIS · TODAY
-              </div>
-            </div>
-          </div>
+          ))}
+        </div>
 
-          {/* CTA banner */}
-          <div className="glass rounded-2xl p-5 text-center" style={{ marginTop: 16, border: "1px solid var(--border-accent)", background: "var(--accent3)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 8px" }}>
-              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-            </svg>
-            <p style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", lineHeight: 1.2 }}>
-              Your AI trading coach is ready
+        {/* Opaque overlay — fills remaining chat area */}
+        <div className="flex-1 flex items-center justify-center px-5"
+          style={{ background: "rgba(6,11,20,0.82)", backdropFilter: "blur(6px)" }}>
+          <div className="glass rounded-2xl text-center"
+            style={{ padding: "28px 24px", width: "100%", maxWidth: 320, border: "1px solid var(--border)" }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", lineHeight: 1.3 }}>
+              Sign in to access your AI coach
             </p>
-            <p style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.6, marginTop: 8 }}>
-              Sign up free to analyze your real trade data, identify patterns in your journal, and get coaching tailored to your exact strategy.
+            <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 8, lineHeight: 1.6 }}>
+              Sessions, patterns &amp; memory persist across devices
             </p>
-            <Link href="/signup"
-              className="mono font-semibold"
-              style={{ display: "block", height: 48, lineHeight: "48px", width: "100%", borderRadius: 12, background: "linear-gradient(to bottom, var(--accent), #0ea5e9)", boxShadow: "0 1px 24px rgba(56,189,248,0.25)", color: "var(--bg)", fontSize: 15, marginTop: 16, textAlign: "center" }}>
-              Create free account →
-            </Link>
-            <Link href="/login"
-              style={{ display: "block", textAlign: "center", marginTop: 8, fontSize: 13, color: "var(--text2)", paddingTop: 10, paddingBottom: 10 }}>
-              Sign in to existing account
-            </Link>
           </div>
         </div>
       </div>
@@ -548,7 +581,7 @@ function PreviewCoachView() {
         <div className="flex items-end gap-2 rounded-2xl px-3 py-2" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)" }}>
           <textarea
             disabled
-            placeholder="Sign up to start coaching your trades…"
+            placeholder="Sign in to start coaching your trades…"
             rows={1}
             className="flex-1 resize-none outline-none text-sm mono bg-transparent"
             style={{ color: "var(--text)", lineHeight: 1.5, maxHeight: 120, minHeight: 24 }}
@@ -568,7 +601,6 @@ function PreviewCoachView() {
 /* ─── Main component ─────────────────────────────────────────── */
 export default function CoachTab() {
   const { isAuthenticated } = useAuthContext()
-  const { coachingHistory } = useTrades()
   const [activeView, setActiveView] = useState<"chat" | "history">("chat")
 
   return (
@@ -609,7 +641,7 @@ export default function CoachTab() {
               transition: "color 0.2s ease",
             }}
           >
-            {`History${coachingHistory.filter(e => !e.archived).length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}`}
+              History
           </button>
         </div>
       </div>
