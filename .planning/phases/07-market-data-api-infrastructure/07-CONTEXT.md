@@ -61,39 +61,65 @@ Claude decides which tools to call based on the user's message. Nothing is pre-f
 
 **Polygon specifically:** fetched only when user asks about a specific instrument in chat. Not proactively fetched on session start.
 
-### Server-Side Caching (D-04)
+### Two-Store Architecture (D-04)
 
-Cache layer: **Next.js `unstable_cache`** — survives between requests within a deployment, no new dependencies, compatible with Vercel serverless.
+The coach has exactly two places to store data — they serve different purposes and must never be conflated:
 
-**Cache philosophy:** Cache only what was actually called. Market data has no real-time subscriptions — data doesn't change intraday in a meaningful way for this use case. The cache's job is to prevent calling the same API twice for the same data in the same day. A cache hit means zero cost, zero latency, zero budget impact.
+**Store 1 — Historical Coaching Store (Supabase `user_metadata`)**
+- What: session index, behavior ledger, milestone log, streaks, journal memory, weekly/monthly summaries
+- Lifespan: permanent — persists across sessions, devices, and browser clears
+- Purpose: coaching memory — the coach's long-term knowledge of the trader
+- Managed by: Phase 6 system (unchanged in Phase 7)
+- Injected into: Claude's system prompt on every call (not a tool call — always present)
 
-**Re-fetch policy:** Only call an API again when BOTH are true:
-1. The cached data's TTL has expired (data may have been updated since last fetch), AND
-2. The user or Claude explicitly requests that data again
+**Store 2 — Daily Market Cache (Next.js `unstable_cache`)**
+- What: API responses — prices, technical indicators, news, economic data, futures bars
+- Lifespan: short-lived — TTL of 15min to 24hr depending on data type
+- Purpose: deduplication — prevent calling the same API twice for the same data within a day
+- Managed by: Phase 7 tool call wrapper layer
+- Injected into: Claude's context only when Claude calls the relevant tool
 
-If the cache is still valid, Claude receives the cached response — no new API call regardless of how many times the user asks about the same symbol or indicator.
+These two stores are independent. Market cache expiring does not affect coaching memory. Coaching memory updates do not touch the market cache.
 
-**Cache keys:** per-endpoint + per-symbol + per-timeframe (e.g., `av:RSI:ES:daily`, `fred:DFF`, `polygon:ES1!:bars:10d`)
+### Server-Side Cache Design (D-05)
+
+Cache layer: **Next.js `unstable_cache`** — no new dependencies, compatible with Vercel serverless.
+
+**Cache keys:** per-source + per-endpoint + per-symbol + per-timeframe
+Examples: `av:RSI:ES:daily`, `fred:DFF`, `polygon:ES1!:bars:10d`, `yf:snapshot:ES,NQ`
+
+**Cache philosophy:** Pure TTL-based. The cache transparently returns stored data on a hit; fetches fresh on a miss. Claude calls the tool — the tool layer handles cache lookup, API call if needed, cache write. Claude never knows or cares whether data came from cache or a live API call.
+
+**No change-detection.** To know if data changed you'd have to call the API — which defeats caching. TTL IS the staleness signal. When TTL expires, the next tool call fetches fresh. No proactive polling, no "has this changed?" checks.
 
 **TTL tiers:**
-| Data type | TTL | Rationale |
-|-----------|-----|-----------|
-| Economic / macro / daily prices | 24hr | TREASURY_YIELD, FEDERAL_FUNDS_RATE, TIME_SERIES_DAILY/WEEKLY/MONTHLY, FRED series, Polygon daily bars — updated once a day at most |
-| Technical indicators + news sentiment | 24hr | RSI/MACD/BBANDS/VWAP on daily bars, NEWS_SENTIMENT — no real-time subscription, daily resolution is sufficient |
-| Market status | 15min | MARKET_STATUS — open/closed/pre-market changes throughout the day |
-| Earnings calendar | 24hr | EARNINGS_CALENDAR — daily resolution |
+| Data type | TTL | Data sources |
+|-----------|-----|-------------|
+| Daily prices / macro / economic | 24hr | AV TIME_SERIES_DAILY/WEEKLY/MONTHLY, TREASURY_YIELD, FEDERAL_FUNDS_RATE, FRED series, Polygon daily bars, AV EARNINGS_CALENDAR |
+| Technical indicators + news | 24hr | AV RSI, MACD, BBANDS, VWAP, NEWS_SENTIMENT — no real-time subscription, daily bars are the source |
+| Yahoo Finance snapshot | 24hr | `fetchFuturesSnapshot` — daily resolution without real-time subscription |
+| Market status | 15min | AV MARKET_STATUS — open/closed/pre-market changes throughout the day |
 
-**Result:** Under normal use, the total number of AV API calls per user per day = number of distinct endpoint+symbol combinations requested, capped by the 24hr TTL. Repeated questions about ES RSI throughout the day = 1 AV call, not N.
+**Result:** Repeated questions about ES RSI throughout the day = 1 AV call, not N. AV daily budget impact = number of distinct endpoint+symbol pairs requested, each called at most once per 24hr window.
 
-### Rate Limit Handling (D-05)
+### Rate Limit and Error Handling (D-06)
 
-**Polygon.io free tier: 5 calls/min**
+**Rate limits → queue and wait, never error.**
 
-If user asks about multiple symbols simultaneously, queue calls sequentially with 12-second spacing. **Never return an error for rate limits — queue and wait.** The response takes longer; that's acceptable. The UX is "bot is thinking" not "API error."
+If a tool call hits a rate limit (Polygon 5 calls/min, AV request throttle), the tool wrapper queues the call and retries after the appropriate delay. Claude's response takes longer; that is acceptable and expected. The user sees the bot thinking, not an error message.
 
-AV and FRED: no known hard rate limits on free tier beyond the 25 req/day for AV. Caching is the primary defense there.
+**Only surface real errors:**
+| Error type | Show to user? | Examples |
+|------------|--------------|---------|
+| Rate limit (429) | No — queue and retry silently | Polygon 5/min, AV throttle |
+| Cache miss + successful fetch | No — transparent | Normal operation |
+| Invalid API key (401/403) | Yes — actionable | "Alpha Vantage key invalid — check Account settings" |
+| API server error (500/503) | Yes — if persistent after 1 retry | "Alpha Vantage unavailable — try again shortly" |
+| Network timeout | Yes — after 1 retry | "Could not reach [source] — proceeding without that data" |
 
-### Available AV Endpoints (D-06)
+**Graceful degradation on real errors:** If a tool call fails with a real error after retry, Claude proceeds with whatever data it has — it never blocks the response waiting for a broken data source. The error is noted in Claude's context so it can acknowledge the gap if relevant.
+
+### Available AV Endpoints (D-07)
 
 All AV endpoints are available as Claude tools via the AV MCP. Key endpoints Claude should know about (from user's confirmed list):
 
@@ -117,7 +143,7 @@ All AV endpoints are available as Claude tools via the AV MCP. Key endpoints Cla
 
 Claude decides which to call. The planner should include a full endpoint-to-tool-definition mapping.
 
-### FRED Endpoints (D-07)
+### FRED Endpoints (D-08)
 
 Key FRED series to expose as Claude tools (free, unlimited):
 - `DFF` — Federal Funds Rate (daily)
@@ -128,7 +154,7 @@ Key FRED series to expose as Claude tools (free, unlimited):
 - `T10Y2Y` — 10-Year minus 2-Year Treasury spread (yield curve inversion signal)
 - `VIXCLS` — CBOE VIX close (daily)
 
-### Polygon Endpoints (D-08)
+### Polygon Endpoints (D-09)
 
 Continuous contracts + historical bars + open interest for CME futures:
 - `ES1!` (E-mini S&P 500), `NQ1!` (E-mini Nasdaq), `YM1!` (E-mini Dow)
@@ -136,7 +162,7 @@ Continuous contracts + historical bars + open interest for CME futures:
 - Data: last 10 daily OHLCV bars + open interest per instrument
 - Triggered only when user asks about a specific instrument
 
-### Mode Behavior (D-09)
+### Mode Behavior (D-10)
 
 All 4 modes share the same tool palette. Nothing is pre-fetched. Claude decides what to call based on the user's message.
 
@@ -149,7 +175,7 @@ All 4 modes share the same tool palette. Nothing is pre-fetched. Claude decides 
 
 Claude's coaching memory (session index, behavior ledger, milestone log, streaks, journal memory, weekly/monthly summaries) continues to be injected into the system context on every call — this is not market data and is not affected by the tool-based architecture change.
 
-### Route Architecture (D-10)
+### Route Architecture (D-11)
 
 No new route files — everything goes in `app/api/coach/route.ts` (existing pattern).
 
