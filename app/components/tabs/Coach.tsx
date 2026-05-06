@@ -371,6 +371,7 @@ function ChatView() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeMode, setActiveMode] = useState<string>("chat")
+  const [showOnboarding, setShowOnboarding] = useState(true)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -384,6 +385,7 @@ function ChatView() {
   }
 
   const sendMessage = async (messageOverride?: string, modeOverride?: string) => {
+    setShowOnboarding(false)
     const text = (messageOverride ?? input).trim()
     if (!text || loading) return
 
@@ -556,20 +558,103 @@ function ChatView() {
             </div>
           )}
 
-          {/* Empty state */}
-          {messages.length === 0 && !loading && (
-            <div className="glass rounded-2xl p-8 flex flex-col items-center justify-center gap-3 text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.3)" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-medium mb-1" style={{ color: "var(--text)" }}>Your AI Trading Coach</p>
-                <p className="text-xs" style={{ color: "var(--text3)", lineHeight: 1.6 }}>
-                  {trades.length === 0 ? "Log some trades first, then run an analysis" : "Tap a mode above or ask anything below"}
+          {/* Onboarding modal — session-local, no persistence */}
+          {showOnboarding && messages.length === 0 && (
+            <div className="glass rounded-2xl overflow-hidden" style={{ width: "100%" }}>
+
+              {/* Header */}
+              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--text)", marginBottom: 2 }}>
+                  Your AI Trading Coach
                 </p>
+                <p className="label-upper" style={{ color: "var(--text3)" }}>
+                  Tap a mode above or start typing to begin
+                </p>
+              </div>
+
+              <div className="p-3 space-y-2">
+
+                {/* Row 1 — Commands */}
+                <div className="rounded-xl p-3" style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  borderLeft: "3px solid var(--accent)",
+                }}>
+                  <p className="label-upper mb-1.5" style={{ color: "var(--accent)" }}>Commands</p>
+                  <ul className="space-y-0.5">
+                    {[
+                      "watch TICKER — add to watchlist (Market Pulse scans these first)",
+                      "unwatch TICKER — remove from watchlist",
+                      "Type anything → Chat mode  ·  or tap a mode button above",
+                    ].map(item => (
+                      <li key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Row 2 — Memory */}
+                <div className="rounded-xl p-3" style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  borderLeft: "3px solid var(--purple)",
+                }}>
+                  <p className="label-upper mb-1.5" style={{ color: "var(--purple)" }}>Memory — persists across sessions</p>
+                  <ul className="space-y-0.5">
+                    {[
+                      "Pattern summary — updated after each Analyze session",
+                      "Session index — titles & topics recalled from your full history",
+                      "Behavior ledger — recurring strengths & weaknesses tracked over time",
+                      "Milestones & streaks — win/loss streaks and rule-adherent days",
+                    ].map(item => (
+                      <li key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Row 3 — AI routing */}
+                <div className="rounded-xl p-3" style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  borderLeft: "3px solid var(--green)",
+                }}>
+                  <p className="label-upper mb-1.5" style={{ color: "var(--green)" }}>AI Stack</p>
+                  <ul className="space-y-0.5">
+                    {[
+                      "Claude Sonnet — all coaching responses, every mode",
+                      "Gemini 2.5 Flash — live web research (Market Pulse & Strategy Review only)",
+                      "Yahoo Finance — real-time prices for your watchlist tickers",
+                    ].map(item => (
+                      <li key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+              </div>
+
+              {/* Dismiss */}
+              <div className="px-3 pb-3">
+                <button
+                  onClick={() => setShowOnboarding(false)}
+                  style={{
+                    width: "100%",
+                    height: 44,
+                    borderRadius: 12,
+                    background: "var(--accent3)",
+                    border: "1px solid var(--border-accent)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--accent)",
+                    transition: "background 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(56,189,248,0.14)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "var(--accent3)")}
+                >
+                  Got it →
+                </button>
               </div>
             </div>
           )}
