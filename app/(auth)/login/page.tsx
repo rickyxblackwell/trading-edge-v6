@@ -306,6 +306,26 @@ export default function LoginPage() {
             Create one →
           </Link>
         </div>
+
+        <div style={{ marginTop: "12px", textAlign: "center" }}>
+          <Link
+            href="/"
+            style={{
+              fontFamily: "var(--font-inter), system-ui, sans-serif",
+              fontSize: "12px",
+              color: "var(--text3)",
+              textDecoration: "none",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text2)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text3)")}
+          >
+            Continue without signing in →
+          </Link>
+          <p style={{ fontFamily: "var(--font-inter), system-ui, sans-serif", fontSize: "11px", color: "var(--text3)", marginTop: "4px", lineHeight: 1.5 }}>
+            Data won&apos;t be saved to the cloud without an account.
+          </p>
+        </div>
       </div>
 
       <style>{`

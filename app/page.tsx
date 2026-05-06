@@ -1,14 +1,15 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter, usePathname } from "next/navigation"
-import { UserCircle } from "lucide-react"
+import { UserCircle, LogIn } from "lucide-react"
 import type { TabId } from "./lib/types"
+import { useAuthContext } from "./components/AuthProvider"
 import StrategyTab from "./components/tabs/Strategy"
 import ChecklistTab from "./components/tabs/Checklist"
 import LogTab from "./components/tabs/Log"
 import StatsTab from "./components/tabs/Stats"
 import CoachTab from "./components/tabs/Coach"
+import AccountTab from "./components/tabs/Account"
 import TradeModal from "./components/TradeModal"
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
@@ -66,12 +67,11 @@ const TAB_COMPONENTS: Record<TabId, React.ComponentType> = {
 }
 
 export default function App() {
+  const { isAuthenticated } = useAuthContext()
   const [activeTab, setActiveTab] = useState<TabId>("log")
   const [journalView, setJournalView] = useState<"log" | "stats">("log")
   const [tradeModalOpen, setTradeModalOpen] = useState(false)
-  const router = useRouter()
-  const pathname = usePathname()
-  const isOnSettings = pathname === "/settings"
+  const [showAccount, setShowAccount] = useState(false)
 
   const ActiveComponent = TAB_COMPONENTS[activeTab]
 
@@ -104,12 +104,12 @@ export default function App() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`tab-btn-v5 flex-1 lg:flex-none flex flex-col lg:flex-row items-center lg:items-center gap-0.5 lg:gap-2.5 py-2 lg:px-3 lg:py-2.5 rounded-xl min-h-[44px] justify-center lg:justify-start lg:w-full${isActive ? " tab-btn-active" : ""}`}
+                  onClick={() => { setActiveTab(tab.id); setShowAccount(false) }}
+                  className={`tab-btn-v5 flex-1 lg:flex-none flex flex-col lg:flex-row items-center lg:items-center gap-0.5 lg:gap-2.5 py-2 lg:px-3 lg:py-2.5 rounded-xl min-h-[44px] justify-center lg:justify-start lg:w-full${isActive && !showAccount ? " tab-btn-active" : ""}`}
                   style={{
-                    color: isActive ? "var(--accent)" : "var(--text2)",
-                    background: isActive ? "var(--accent3)" : "transparent",
-                    border: isActive ? "1px solid var(--border-accent)" : "1px solid transparent",
+                    color: isActive && !showAccount ? "var(--accent)" : "var(--text2)",
+                    background: isActive && !showAccount ? "var(--accent3)" : "transparent",
+                    border: isActive && !showAccount ? "1px solid var(--border-accent)" : "1px solid transparent",
                   }}
                   aria-label={tab.label}
                   aria-current={isActive ? "page" : undefined}
@@ -117,7 +117,7 @@ export default function App() {
                   {tab.icon}
                   <span
                     className="label-upper lg:normal-case lg:tracking-normal lg:font-medium lg:text-sm"
-                    style={{ color: isActive ? "var(--accent)" : "var(--text2)" }}
+                    style={{ color: isActive && !showAccount ? "var(--accent)" : "var(--text2)" }}
                   >
                     {tab.label}
                   </span>
@@ -127,17 +127,22 @@ export default function App() {
 
             {/* Account button — mobile (visible in bottom bar row) */}
             <button
-              onClick={() => router.push("/settings")}
-              className="tab-btn-v5 flex-1 lg:hidden flex flex-col items-center gap-0.5 py-2 min-h-[44px] justify-center"
-              style={{ color: isOnSettings ? "var(--accent)" : "var(--text2)" }}
-              aria-label="Account"
+              onClick={() => setShowAccount(true)}
+              className={`tab-btn-v5 flex-1 lg:hidden flex flex-col items-center gap-0.5 py-2 rounded-xl min-h-[44px] justify-center${showAccount ? " tab-btn-active" : ""}`}
+              style={{
+                color: showAccount ? "var(--accent)" : "var(--text2)",
+                background: showAccount ? "var(--accent3)" : "transparent",
+                border: showAccount ? "1px solid var(--border-accent)" : "1px solid transparent",
+              }}
+              aria-label={isAuthenticated ? "Account" : "Sign in"}
+              aria-current={showAccount ? "page" : undefined}
             >
-              <UserCircle size={20} />
+              {isAuthenticated ? <UserCircle size={20} /> : <LogIn size={20} />}
               <span
                 className="label-upper"
-                style={{ color: isOnSettings ? "var(--accent)" : "var(--text2)" }}
+                style={{ color: showAccount ? "var(--accent)" : "var(--text2)" }}
               >
-                Account
+                {isAuthenticated ? "Account" : "Sign in"}
               </span>
             </button>
           </div>
@@ -148,18 +153,18 @@ export default function App() {
             style={{ borderTop: "1px solid var(--border)" }}
           >
             <button
-              onClick={() => router.push("/settings")}
-              className={`tab-btn-v5 flex flex-row items-center gap-2.5 px-3 py-2.5 rounded-xl w-full${isOnSettings ? " tab-btn-active" : ""}`}
+              onClick={() => setShowAccount(true)}
+              className={`tab-btn-v5 flex flex-row items-center gap-2.5 px-3 py-2.5 rounded-xl w-full${showAccount ? " tab-btn-active" : ""}`}
               style={{
-                color: isOnSettings ? "var(--accent)" : "var(--text2)",
-                background: isOnSettings ? "var(--accent3)" : "transparent",
-                border: isOnSettings ? "1px solid var(--border-accent)" : "1px solid transparent",
+                color: showAccount ? "var(--accent)" : "var(--text2)",
+                background: showAccount ? "var(--accent3)" : "transparent",
+                border: showAccount ? "1px solid var(--border-accent)" : "1px solid transparent",
               }}
-              aria-label="Account settings"
+              aria-label={isAuthenticated ? "Account settings" : "Sign in"}
             >
-              <UserCircle size={20} />
+              {isAuthenticated ? <UserCircle size={20} /> : <LogIn size={20} />}
               <span className="lg:normal-case lg:tracking-normal lg:font-medium lg:text-sm">
-                Account
+                {isAuthenticated ? "Account" : "Sign in"}
               </span>
             </button>
           </div>
@@ -173,8 +178,10 @@ export default function App() {
             paddingTop: "env(safe-area-inset-top)",
           }}
         >
-          <div className="content-wrap py-4 fade-up" key={activeTab}>
-            {activeTab === "log" ? (
+          <div className="content-wrap py-4 fade-up" key={showAccount ? "account" : activeTab}>
+            {showAccount ? (
+              <AccountTab />
+            ) : activeTab === "log" ? (
               <>
                 <div className="flex justify-center px-4 pb-4">
                   <div
