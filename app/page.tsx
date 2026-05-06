@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { UserCircle } from "lucide-react"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { TabId } from "./lib/types"
 import StrategyTab from "./components/tabs/Strategy"
 import ChecklistTab from "./components/tabs/Checklist"
@@ -178,26 +177,43 @@ export default function App() {
             {activeTab === "log" ? (
               <>
                 <div className="flex justify-center px-4 pb-4">
-                  <Tabs value={journalView} onValueChange={(v) => setJournalView(v as "log" | "stats")}>
-                    <TabsList
-                      className="grid grid-cols-2 rounded-xl bg-transparent p-0 h-auto w-48"
-                      style={{ border: "1px solid var(--border)" }}
+                  <div
+                    className="relative flex rounded-xl overflow-hidden"
+                    style={{ border: "1px solid var(--border)" }}
+                  >
+                    {/* Sliding bubble */}
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 w-1/2 pointer-events-none"
+                      style={{
+                        background: "var(--accent3)",
+                        border: "1px solid var(--border-accent)",
+                        borderRadius: "inherit",
+                        transform: journalView === "log" ? "translateX(0%)" : "translateX(100%)",
+                        transition: "transform 0.2s ease",
+                      }}
+                    />
+                    <button
+                      onClick={() => setJournalView("log")}
+                      className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[80px]"
+                      style={{
+                        color: journalView === "log" ? "var(--accent)" : "var(--text3)",
+                        transition: "color 0.2s ease",
+                      }}
                     >
-                      <TabsTrigger
-                        value="log"
-                        className="rounded-l-xl rounded-r-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
-                        style={{ borderRight: "1px solid var(--border)" }}
-                      >
-                        Journal
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="stats"
-                        className="rounded-r-xl rounded-l-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
-                      >
-                        Stats
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                      Journal
+                    </button>
+                    <button
+                      onClick={() => setJournalView("stats")}
+                      className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[80px]"
+                      style={{
+                        color: journalView === "stats" ? "var(--accent)" : "var(--text3)",
+                        transition: "color 0.2s ease",
+                      }}
+                    >
+                      Stats
+                    </button>
+                  </div>
                 </div>
                 {journalView === "log" ? <LogTab /> : <StatsTab />}
               </>

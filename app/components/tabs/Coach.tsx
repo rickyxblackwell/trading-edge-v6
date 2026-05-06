@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useTrades } from "../../lib/TradesContext"
 import { useAuthContext } from "@/app/components/AuthProvider"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ChatMessage, CoachingEntry } from "../../lib/types"
 
 const STRATEGY_KEY = "edge_v5_strategy_text"
@@ -576,26 +575,43 @@ export default function CoachTab() {
     <div className="flex flex-col">
       {/* Header with sub-tab toggle */}
       <div className="flex justify-center px-4 pt-4 pb-0">
-        <Tabs value={activeView} onValueChange={(v) => setActiveView(v as "chat" | "history")}>
-          <TabsList
-            className="grid grid-cols-2 rounded-xl bg-transparent p-0 h-auto w-48"
-            style={{ border: "1px solid var(--border)" }}
+        <div
+          className="relative flex rounded-xl overflow-hidden"
+          style={{ border: "1px solid var(--border)" }}
+        >
+          {/* Sliding bubble */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 w-1/2 pointer-events-none"
+            style={{
+              background: "var(--accent3)",
+              border: "1px solid var(--border-accent)",
+              borderRadius: "inherit",
+              transform: activeView === "chat" ? "translateX(0%)" : "translateX(100%)",
+              transition: "transform 0.2s ease",
+            }}
+          />
+          <button
+            onClick={() => setActiveView("chat")}
+            className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[72px]"
+            style={{
+              color: activeView === "chat" ? "var(--accent)" : "var(--text3)",
+              transition: "color 0.2s ease",
+            }}
           >
-            <TabsTrigger
-              value="chat"
-              className="rounded-l-xl rounded-r-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
-              style={{ borderRight: "1px solid var(--border)" }}
-            >
-              Chat
-            </TabsTrigger>
-            <TabsTrigger
-              value="history"
-              className="rounded-r-xl rounded-l-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
-            >
-              {`History${coachingHistory.filter(e => !e.archived).length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}`}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+            Chat
+          </button>
+          <button
+            onClick={() => setActiveView("history")}
+            className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[72px]"
+            style={{
+              color: activeView === "history" ? "var(--accent)" : "var(--text3)",
+              transition: "color 0.2s ease",
+            }}
+          >
+            {`History${coachingHistory.filter(e => !e.archived).length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}`}
+          </button>
+        </div>
       </div>
 
       {activeView === "chat"
