@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useTrades } from "../../lib/TradesContext"
 import { useAuthContext } from "@/app/components/AuthProvider"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ChatMessage, CoachingEntry } from "../../lib/types"
 
 const STRATEGY_KEY = "edge_v5_strategy_text"
@@ -575,15 +576,26 @@ export default function CoachTab() {
     <div className="flex flex-col">
       {/* Header with sub-tab toggle */}
       <div className="flex justify-center px-4 pt-4 pb-0">
-        <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-          {(["chat", "history"] as const).map(v => (
-            <button key={v} onClick={() => setActiveView(v)}
-              className="px-6 py-1.5 mono text-xs capitalize transition-colors duration-150"
-              style={{ background: activeView === v ? "var(--accent3)" : "transparent", color: activeView === v ? "var(--accent)" : "var(--text3)", borderRight: v === "chat" ? "1px solid var(--border)" : "none" }}>
-              {v === "history" ? `History${coachingHistory.length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}` : "Chat"}
-            </button>
-          ))}
-        </div>
+        <Tabs value={activeView} onValueChange={(v) => setActiveView(v as "chat" | "history")}>
+          <TabsList
+            className="grid grid-cols-2 rounded-xl bg-transparent p-0 h-auto w-48"
+            style={{ border: "1px solid var(--border)" }}
+          >
+            <TabsTrigger
+              value="chat"
+              className="rounded-l-xl rounded-r-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
+              style={{ borderRight: "1px solid var(--border)" }}
+            >
+              Chat
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="rounded-r-xl rounded-l-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
+            >
+              {`History${coachingHistory.filter(e => !e.archived).length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}`}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {activeView === "chat"

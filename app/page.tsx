@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { UserCircle } from "lucide-react"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { TabId } from "./lib/types"
 import StrategyTab from "./components/tabs/Strategy"
 import ChecklistTab from "./components/tabs/Checklist"
@@ -177,22 +178,26 @@ export default function App() {
             {activeTab === "log" ? (
               <>
                 <div className="flex justify-center px-4 pb-4">
-                  <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-                    {(["log", "stats"] as const).map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => setJournalView(v)}
-                        className="px-6 py-1.5 mono text-xs capitalize transition-colors duration-150"
-                        style={{
-                          background: journalView === v ? "var(--accent3)" : "transparent",
-                          color: journalView === v ? "var(--accent)" : "var(--text3)",
-                          borderRight: v === "log" ? "1px solid var(--border)" : "none",
-                        }}
+                  <Tabs value={journalView} onValueChange={(v) => setJournalView(v as "log" | "stats")}>
+                    <TabsList
+                      className="grid grid-cols-2 rounded-xl bg-transparent p-0 h-auto w-48"
+                      style={{ border: "1px solid var(--border)" }}
+                    >
+                      <TabsTrigger
+                        value="log"
+                        className="rounded-l-xl rounded-r-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
+                        style={{ borderRight: "1px solid var(--border)" }}
                       >
-                        {v === "log" ? "Journal" : "Stats"}
-                      </button>
-                    ))}
-                  </div>
+                        Journal
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="stats"
+                        className="rounded-r-xl rounded-l-none mono text-xs py-1.5 bg-transparent text-[var(--text3)] data-[state=active]:bg-[var(--accent3)] data-[state=active]:text-[var(--accent)] data-[state=active]:shadow-none transition-colors duration-150"
+                      >
+                        Stats
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                 </div>
                 {journalView === "log" ? <LogTab /> : <StatsTab />}
               </>
