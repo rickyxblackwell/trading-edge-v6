@@ -574,18 +574,15 @@ export default function CoachTab() {
   return (
     <div className="flex flex-col">
       {/* Header with sub-tab toggle */}
-      <div className="px-4 pt-4 pb-0 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="label-upper">AI Coach</p>
-          <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-            {(["chat", "history"] as const).map(v => (
-              <button key={v} onClick={() => setActiveView(v)}
-                className="px-4 py-1.5 mono text-xs capitalize transition-colors duration-150"
-                style={{ background: activeView === v ? "var(--accent3)" : "transparent", color: activeView === v ? "var(--accent)" : "var(--text3)", borderRight: v === "chat" ? "1px solid var(--border)" : "none" }}>
-                {v === "history" ? `History${coachingHistory.length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}` : "Chat"}
-              </button>
-            ))}
-          </div>
+      <div className="flex justify-center px-4 pt-4 pb-0">
+        <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+          {(["chat", "history"] as const).map(v => (
+            <button key={v} onClick={() => setActiveView(v)}
+              className="px-6 py-1.5 mono text-xs capitalize transition-colors duration-150"
+              style={{ background: activeView === v ? "var(--accent3)" : "transparent", color: activeView === v ? "var(--accent)" : "var(--text3)", borderRight: v === "chat" ? "1px solid var(--border)" : "none" }}>
+              {v === "history" ? `History${coachingHistory.length > 0 ? ` (${coachingHistory.filter(e => !e.archived).length})` : ""}` : "Chat"}
+            </button>
+          ))}
         </div>
       </div>
 

@@ -47,18 +47,6 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
-    id: "stats",
-    label: "Stats",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10" />
-        <line x1="12" y1="20" x2="12" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="14" />
-        <path d="M2 20h20" />
-      </svg>
-    ),
-  },
-  {
     id: "coach",
     label: "Coach",
     icon: (
@@ -74,12 +62,12 @@ const TAB_COMPONENTS: Record<TabId, React.ComponentType> = {
   strategy: StrategyTab,
   checklist: ChecklistTab,
   log: LogTab,
-  stats: StatsTab,
   coach: CoachTab,
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabId>("stats")
+  const [activeTab, setActiveTab] = useState<TabId>("log")
+  const [journalView, setJournalView] = useState<"log" | "stats">("log")
   const [tradeModalOpen, setTradeModalOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
@@ -186,7 +174,31 @@ export default function App() {
           }}
         >
           <div className="content-wrap py-4 fade-up" key={activeTab}>
-            <ActiveComponent />
+            {activeTab === "log" ? (
+              <>
+                <div className="flex justify-center px-4 pb-4">
+                  <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                    {(["log", "stats"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setJournalView(v)}
+                        className="px-6 py-1.5 mono text-xs capitalize transition-colors duration-150"
+                        style={{
+                          background: journalView === v ? "var(--accent3)" : "transparent",
+                          color: journalView === v ? "var(--accent)" : "var(--text3)",
+                          borderRight: v === "log" ? "1px solid var(--border)" : "none",
+                        }}
+                      >
+                        {v === "log" ? "Journal" : "Stats"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {journalView === "log" ? <LogTab /> : <StatsTab />}
+              </>
+            ) : (
+              <ActiveComponent />
+            )}
           </div>
         </main>
       </div>
