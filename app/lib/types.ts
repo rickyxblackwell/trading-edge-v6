@@ -39,3 +39,64 @@ export interface ChatMessage {
 }
 
 export type TabId = "strategy" | "checklist" | "log" | "coach"
+
+export interface SessionIndexEntry {
+  title: string
+  timestamp: string
+  mode: CoachingEntry["mode"]
+  momentumLabel: string
+}
+
+export interface BehaviorLedger {
+  lunchChop: number
+  overtrading: number
+  revengeTrade: number
+  noSetup: number
+  skippedBreak: number
+  positionSizing: number
+  dailyLimitBreached: number
+}
+
+export interface MilestoneLog {
+  firstProfitableDay?: string
+  firstWinStreak3?: string
+  firstWinStreak5?: string
+  bestRSession?: number
+  bestDayPnl?: number
+  lowestDrawdown?: number
+}
+
+export interface Streaks {
+  currentWin: number
+  currentLoss: number
+  longestWin: number
+  longestLoss: number
+  ruleAdherentDays: number
+  longestRuleAdherent: number
+}
+
+export interface JournalMemory {
+  shortTerm: string
+  mediumTerm: string
+  longTerm: string
+  mediumCounter: number
+  longCounter: number
+}
+
+export interface WeeklySummary {
+  weekOf: string
+  trades: number
+  pnl: number
+  winRate: number
+  topSession: string
+  topViolation: string
+}
+
+export interface MonthlySummary {
+  monthOf: string
+  trades: number
+  pnl: number
+  winRate: number
+  bestWeekOf: string
+  worstWeekOf: string
+}
