@@ -120,7 +120,7 @@ function Calendar({
 }
 
 /* ─── Stats bar ─────────────────────────────────────────────── */
-function StatsBar({ trades, selectedDate }: { trades: Trade[]; selectedDate: string | null }) {
+function StatsBar({ trades }: { trades: Trade[] }) {
   const pnl = trades.reduce((s, t) => s + t.pnl, 0)
   const wins = trades.filter(t => t.outcome === "win").length
   const losses = trades.filter(t => t.outcome === "loss").length
@@ -137,7 +137,7 @@ function StatsBar({ trades, selectedDate }: { trades: Trade[]; selectedDate: str
   ]
 
   return (
-    <div className="glass rounded-2xl px-4 py-3" style={{ borderColor: selectedDate ? "var(--border-accent)" : undefined }}>
+    <div className="glass rounded-2xl px-4 py-3">
       <div className="grid grid-cols-4 gap-2">
         {stats.map(({ label, val, color }) => (
           <div key={label} className="flex flex-col items-center gap-1">
@@ -146,11 +146,6 @@ function StatsBar({ trades, selectedDate }: { trades: Trade[]; selectedDate: str
           </div>
         ))}
       </div>
-      {selectedDate && (
-        <p className="label-upper text-center mt-2 pt-2" style={{ color: "var(--text3)", borderTop: "1px solid var(--border)" }}>
-          {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-        </p>
-      )}
     </div>
   )
 }
@@ -420,7 +415,7 @@ export default function LogTab() {
 
       {/* Stats bar (daily view) */}
       {view === "daily" && (
-        <StatsBar trades={displayedTrades} selectedDate={selectedDate} />
+        <StatsBar trades={displayedTrades} />
       )}
 
       {/* Calendar (daily view only) */}
