@@ -114,28 +114,31 @@ export default function AccountTab() {
     if (!user) return
     setExporting(true)
     const meta = user.user_metadata ?? {}
-    const exportFields = {
-      pattern_summary: meta.pattern_summary ?? null,
-      session_index: meta.session_index ?? [],
-      behavior_ledger: meta.behavior_ledger ?? null,
-      milestone_log: meta.milestone_log ?? null,
-      streaks: meta.streaks ?? null,
-      journal_memory: meta.journal_memory ?? null,
-      weekly_summaries: meta.weekly_summaries ?? [],
-      monthly_summaries: meta.monthly_summaries ?? [],
-      watchlist: meta.watchlist ?? [],
-      strategy_text: meta.strategy_text ?? "",
-    }
+    const tradesRaw = typeof window !== "undefined" ? localStorage.getItem("edge_v5_trades") : null
+    const historyRaw = typeof window !== "undefined" ? localStorage.getItem("edge_v5_coaching_history") : null
     const payload = {
-      version: "v6-memory-1",
+      version: "v6-backup-1",
       exportedAt: new Date().toISOString(),
-      data: exportFields,
+      memory: {
+        pattern_summary: meta.pattern_summary ?? null,
+        session_index: meta.session_index ?? [],
+        behavior_ledger: meta.behavior_ledger ?? null,
+        milestone_log: meta.milestone_log ?? null,
+        streaks: meta.streaks ?? null,
+        journal_memory: meta.journal_memory ?? null,
+        weekly_summaries: meta.weekly_summaries ?? [],
+        monthly_summaries: meta.monthly_summaries ?? [],
+        watchlist: meta.watchlist ?? [],
+        strategy_text: meta.strategy_text ?? "",
+      },
+      trades: tradesRaw ? JSON.parse(tradesRaw) : [],
+      coachingHistory: historyRaw ? JSON.parse(historyRaw) : [],
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `trading-edge-memory-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `trading-edge-backup-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
     setExporting(false)
@@ -155,11 +158,14 @@ export default function AccountTab() {
       return
     }
     const p = parsed as Record<string, unknown>
-    if (p.version !== "v6-memory-1") {
+    const isFullBackup = p.version === "v6-backup-1"
+    const isMemoryOnly = p.version === "v6-memory-1"
+    if (!isFullBackup && !isMemoryOnly) {
       setImportError("Unrecognised file version")
       return
     }
-    const data = (p.data ?? {}) as Record<string, unknown>
+    // Memory fields: v6-backup-1 stores under .memory, v6-memory-1 under .data
+    const memorySource = (isFullBackup ? p.memory : p.data) as Record<string, unknown> ?? {}
     const allowedKeys = [
       "pattern_summary","session_index","behavior_ledger","milestone_log",
       "streaks","journal_memory","weekly_summaries","monthly_summaries",
@@ -167,16 +173,26 @@ export default function AccountTab() {
     ]
     const mergeFields: Record<string, unknown> = {}
     for (const key of allowedKeys) {
-      if (key in data) mergeFields[key] = data[key]
+      if (key in memorySource) mergeFields[key] = memorySource[key]
     }
     const supabase = createClient()
     const { error } = await supabase.auth.updateUser({ data: mergeFields })
     if (error) {
       setImportError("Import failed: " + error.message)
-    } else {
-      setImportSuccess(true)
-      setTimeout(() => setImportSuccess(false), 3000)
+      e.target.value = ""
+      return
     }
+    // Restore trade journal and coaching history to localStorage
+    if (isFullBackup) {
+      if (Array.isArray(p.trades) && p.trades.length > 0) {
+        localStorage.setItem("edge_v5_trades", JSON.stringify(p.trades))
+      }
+      if (Array.isArray(p.coachingHistory) && p.coachingHistory.length > 0) {
+        localStorage.setItem("edge_v5_coaching_history", JSON.stringify(p.coachingHistory))
+      }
+    }
+    setImportSuccess(true)
+    setTimeout(() => setImportSuccess(false), 4000)
     e.target.value = ""
   }
 
@@ -731,7 +747,7 @@ export default function AccountTab() {
                   Export / Import Memory
                 </span>
                 <span style={{ fontSize: 11, color: "var(--text3)", fontFamily: "var(--font-inter, Inter, sans-serif)", display: "block", marginTop: 2 }}>
-                  Pattern summary, sessions, streaks, watchlist
+                  Trade journal, coaching history, AI memory &amp; settings
                 </span>
               </div>
             </div>
@@ -772,7 +788,7 @@ export default function AccountTab() {
                 onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
               >
                 <Download size={14} style={{ color: "var(--text2)" }} />
-                {exporting ? "Exporting…" : "Download memory backup"}
+                {exporting ? "Exporting…" : "Download full backup"}
               </button>
 
               {/* Import */}
@@ -796,7 +812,7 @@ export default function AccountTab() {
                 onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
               >
                 <Upload size={14} style={{ color: "var(--text2)" }} />
-                Import memory backup
+                Restore from backup
                 <input
                   type="file"
                   accept=".json"
@@ -813,12 +829,12 @@ export default function AccountTab() {
               {importSuccess && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <CheckCircle size={14} style={{ color: "var(--green)" }} />
-                  <span className="mono" style={{ fontSize: 12, color: "var(--green)" }}>Memory restored</span>
+                  <span className="mono" style={{ fontSize: 12, color: "var(--green)" }}>Restored — reload to see trades</span>
                 </div>
               )}
 
               <p style={{ fontSize: 11, color: "var(--text3)", margin: 0, fontFamily: "var(--font-inter, Inter, sans-serif)", lineHeight: 1.5 }}>
-                Export saves your AI coaching memory as a JSON file. Import restores from a previous export — only fields present in the file are overwritten.
+                Exports your full trade journal, coaching history, and AI memory to a single JSON file. Import restores everything — reload the app after importing to see your trades.
               </p>
             </div>
           )}
