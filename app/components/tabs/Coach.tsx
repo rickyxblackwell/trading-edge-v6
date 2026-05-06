@@ -514,6 +514,27 @@ function ChatView() {
             )}
           </div>
 
+          {/* Streak display — only render when there is meaningful streak data */}
+          {(streaks.currentWin > 0 || streaks.currentLoss > 0 || streaks.ruleAdherentDays > 0) && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {streaks.currentWin > 0 && (
+                <span className="label-upper" style={{ color: "var(--green)" }}>
+                  <span className="mono">{streaks.currentWin}</span>-win streak
+                </span>
+              )}
+              {streaks.currentLoss > 0 && (
+                <span className="label-upper" style={{ color: "var(--red)" }}>
+                  <span className="mono">{streaks.currentLoss}</span>-loss streak
+                </span>
+              )}
+              {streaks.ruleAdherentDays > 0 && (
+                <span className="label-upper" style={{ color: "var(--text2)" }}>
+                  Rule-adherent: <span className="mono">{streaks.ruleAdherentDays}</span>d
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Mode chips */}
           <div className="flex flex-wrap gap-2 justify-center">
             {MODES.map(mode => (
