@@ -105,7 +105,7 @@ All trade, coaching history, pattern summary, and strategy text data moves from 
 <deferred>
 ## Deferred Ideas
 
-- **Export JSON to account page** — user wants a JSON export button in the Account/Settings tab. Deferred to Phase 3 (Stability & PWA) when the settings page gets expanded. The `ExportPackage` interface in TradesContext already defines the shape.
+- **Export + Import JSON in account page** — user wants both a JSON export button and a JSON import button in the Account/Settings tab, enabling data transfer between accounts (e.g. moving all trades and coaching history to a new account). Deferred to Phase 3 (Stability & PWA) when the settings page gets expanded. The `ExportPackage` interface in TradesContext already defines the export shape; import already exists as `importData()` in TradesContext — Phase 3 needs to wire both into Supabase writes, not just localStorage.
 - **Living "strategy file" with AI updates** — coach periodically updates the user strategy file based on coaching session output. Significant new capability; belongs in a dedicated phase after Phase 2 ships.
 - **Coach customization / alignment feature** — if user strategy file diverges too far from core Strategy tab, surface alignment guidance. Deferred; depends on living strategy file capability above.
 - **Supabase Realtime cross-device sync** — live trade updates across devices/tabs. Deferred; fetch-on-mount is sufficient for Phase 2.

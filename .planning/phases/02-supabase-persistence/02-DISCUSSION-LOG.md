@@ -136,7 +136,7 @@
 
 ## Deferred Ideas
 
-- Export JSON feature for account page (mentioned mid-session) — Phase 3 (Settings expansion)
+- Export + Import JSON in account page — both directions, for cross-account data transfer. Phase 3 (Settings expansion). `ExportPackage` interface already defines the shape; `importData()` already exists in TradesContext.
 - Living "user strategy file" with AI coach periodic updates — dedicated future phase
 - Coach customization / alignment feature when strategy file diverges from core teachings
 - Supabase Realtime cross-device sync — deferred
