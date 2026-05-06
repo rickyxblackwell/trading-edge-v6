@@ -195,7 +195,7 @@ export default function App() {
                     />
                     <button
                       onClick={() => setJournalView("log")}
-                      className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[80px]"
+                      className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
                       style={{
                         color: journalView === "log" ? "var(--accent)" : "var(--text3)",
                         transition: "color 0.2s ease",
@@ -205,7 +205,7 @@ export default function App() {
                     </button>
                     <button
                       onClick={() => setJournalView("stats")}
-                      className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[80px]"
+                      className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
                       style={{
                         color: journalView === "stats" ? "var(--accent)" : "var(--text3)",
                         transition: "color 0.2s ease",

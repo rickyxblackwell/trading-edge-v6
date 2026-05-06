@@ -593,7 +593,7 @@ export default function CoachTab() {
           />
           <button
             onClick={() => setActiveView("chat")}
-            className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[72px]"
+            className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[72px]"
             style={{
               color: activeView === "chat" ? "var(--accent)" : "var(--text3)",
               transition: "color 0.2s ease",
@@ -603,7 +603,7 @@ export default function CoachTab() {
           </button>
           <button
             onClick={() => setActiveView("history")}
-            className="relative z-10 flex-1 mono text-xs py-1.5 px-6 text-center min-w-[72px]"
+            className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[72px]"
             style={{
               color: activeView === "history" ? "var(--accent)" : "var(--text3)",
               transition: "color 0.2s ease",
