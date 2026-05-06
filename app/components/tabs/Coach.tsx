@@ -8,6 +8,25 @@ import { useTrades } from "../../lib/TradesContext"
 import { useAuthContext } from "@/app/components/AuthProvider"
 import type { ChatMessage, CoachingEntry } from "../../lib/types"
 
+function buildCoachingContextSelection(
+  history: CoachingEntry[]
+): Array<{title: string; timestamp: string; mode: string; content: string}> {
+  if (history.length === 0) return []
+  const toEntry = (e: CoachingEntry) => ({
+    title: e.title || "",
+    timestamp: e.timestamp,
+    mode: e.mode,
+    content: (e.fullContent || "").slice(0, 300),
+  })
+  if (history.length <= 20) return history.map(toEntry)
+  const first = [history[0]]
+  const recent = history.slice(-20)
+  const middle = history.slice(1, -20)
+  const step = Math.max(1, Math.ceil(middle.length / 15))
+  const sampled = middle.filter((_, i) => i % step === 0).slice(0, 15)
+  return [...first, ...sampled, ...recent].map(toEntry)
+}
+
 const STRATEGY_KEY = "edge_v5_strategy_text"
 
 // Detect watchlist intent from user's message — don't rely on AI command formatting
@@ -335,11 +354,23 @@ function HistoryView() {
 
 /* ─── Chat tab view ──────────────────────────────────────────── */
 function ChatView() {
-  const { trades, coachingHistory, addCoachingEntry, patternSummary, updatePatternSummary, watchlist, updateWatchlist } = useTrades()
+  const {
+    trades, coachingHistory, addCoachingEntry,
+    patternSummary, updatePatternSummary,
+    watchlist, updateWatchlist,
+    sessionIndex, updateSessionIndex,
+    behaviorLedger, updateBehaviorLedger,
+    milestoneLog, updateMilestoneLog,
+    streaks, updateStreaks,
+    journalMemory,
+    weeklySummaries, updateWeeklySummaries,
+    monthlySummaries, updateMonthlySummaries,
+  } = useTrades()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [activeMode, setActiveMode] = useState<string>("chat")
   const textRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -357,6 +388,7 @@ function ChatView() {
     if (!text || loading) return
 
     const mode = (modeOverride ?? "chat") as CoachingEntry["mode"]
+    setActiveMode(mode)
     const userMsg: ChatMessage = { id: genId(), role: "user", content: text, timestamp: new Date().toISOString(), mode }
     setMessages(prev => [...prev, userMsg])
     setInput("")
@@ -389,6 +421,14 @@ function ChatView() {
           strategyText: (typeof window !== "undefined" ? localStorage.getItem(STRATEGY_KEY) : null) ?? "",
           sessionId: genSessionId(),
           watchlist: effectiveWatchlist,
+          sessionIndex,
+          behaviorLedger,
+          milestoneLog,
+          streaks,
+          journalMemory,
+          coachingContextFull: buildCoachingContextSelection(coachingHistory),
+          weeklySummaries,
+          monthlySummaries,
         }),
       })
 
@@ -400,6 +440,14 @@ function ChatView() {
 
       // Update rolling pattern summary
       if (data.newPatternSummary) updatePatternSummary(data.newPatternSummary)
+
+      // Dispatch memory updates returned by route
+      if (data.sessionIndexUpdate) updateSessionIndex(data.sessionIndexUpdate)
+      if (data.behaviorLedgerUpdate) updateBehaviorLedger(data.behaviorLedgerUpdate)
+      if (data.milestoneUpdate) updateMilestoneLog(data.milestoneUpdate)
+      if (data.streaksUpdate) updateStreaks(data.streaksUpdate)
+      if (data.weeklyUpdate?.length) updateWeeklySummaries(data.weeklyUpdate)
+      if (data.monthlyUpdate?.length) updateMonthlySummaries(data.monthlyUpdate)
 
       // Apply watchlist mutations from AI response
       if (data.watchlistAdd?.length || data.watchlistRemove?.length) {
@@ -537,7 +585,7 @@ function ChatView() {
           </button>
         </div>
         <p className="text-center label-upper mt-2" style={{ color: "var(--text3)", fontSize: 9 }}>
-          Gemini 2.5 Flash · strategy &amp; journal context · memory: {patternSummary ? "active" : "building"}
+          Claude Sonnet{(activeMode === "market-pulse" || activeMode === "strategy-review") ? " · Gemini Search" : ""} · Yahoo Finance · memory: {patternSummary ? "active" : "building"}
         </p>
       </div>
     </div>
