@@ -46,6 +46,13 @@ export default function AccountTab() {
   const [avSaving, setAvSaving] = useState(false)
   const [avSaveSuccess, setAvSaveSuccess] = useState(false)
 
+  const [maskedPolygonKey, setMaskedPolygonKey] = useState<string | null>(null)
+  const [polygonExpanded, setPolygonExpanded] = useState(false)
+  const [newPolygonKey, setNewPolygonKey] = useState("")
+  const [showPolygonKey, setShowPolygonKey] = useState(false)
+  const [polygonSaving, setPolygonSaving] = useState(false)
+  const [polygonSaveSuccess, setPolygonSaveSuccess] = useState(false)
+
   const [memoryBackupExpanded, setMemoryBackupExpanded] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState(false)
@@ -65,6 +72,8 @@ export default function AccountTab() {
       setMaskedClaudeKey(claudeKey ? `sk-ant-••••${claudeKey.slice(-4)}` : null)
       const avKey = user?.user_metadata?.av_api_key as string | undefined
       setMaskedAvKey(avKey ? `••••${avKey.slice(-4)}` : null)
+      const polygonKey = user?.user_metadata?.polygon_api_key as string | undefined
+      setMaskedPolygonKey(polygonKey ? `••••${polygonKey.slice(-4)}` : null)
     })
   }, [])
 
@@ -139,6 +148,28 @@ export default function AccountTab() {
       }, 2000)
     }
     setAvSaving(false)
+  }
+
+  async function handleSavePolygonKey() {
+    if (!newPolygonKey.trim()) return
+    setPolygonSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase.auth.updateUser({
+      data: { polygon_api_key: newPolygonKey.trim() },
+    })
+    if (!error) {
+      setPolygonSaveSuccess(true)
+      setTimeout(() => {
+        setPolygonSaveSuccess(false)
+        setPolygonExpanded(false)
+        setNewPolygonKey("")
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          const key = user?.user_metadata?.polygon_api_key as string | undefined
+          setMaskedPolygonKey(key ? `••••${key.slice(-4)}` : null)
+        })
+      }, 2000)
+    }
+    setPolygonSaving(false)
   }
 
   async function handleExportMemory() {
@@ -922,6 +953,199 @@ export default function AccountTab() {
                   }}
                 >
                   {avSaving ? <Loader2 size={16} className="spin" /> : "Save key"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Polygon.io key glass card */}
+        <div className="glass" style={{ borderRadius: 16, overflow: "hidden", marginTop: 12 }}>
+          {/* Polygon key status row */}
+          <div
+            style={{
+              height: 56,
+              padding: "0 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <KeyRound size={16} style={{ color: "var(--text2)", flexShrink: 0 }} />
+              <div style={{ marginLeft: 10 }}>
+                <span
+                  style={{
+                    fontSize: 14,
+                    color: "var(--text)",
+                    fontFamily: "var(--font-inter, Inter, sans-serif)",
+                    display: "block",
+                  }}
+                >
+                  Polygon.io API key
+                </span>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    color: maskedPolygonKey ? "var(--text2)" : "var(--red)",
+                    display: "block",
+                    marginTop: 2,
+                  }}
+                >
+                  {maskedPolygonKey ?? "Not connected"}
+                </span>
+              </div>
+            </div>
+            <span
+              className="mono"
+              style={{
+                fontSize: 10,
+                color: maskedPolygonKey ? "var(--green)" : "var(--red)",
+                background: maskedPolygonKey ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.1)",
+                border: maskedPolygonKey
+                  ? "1px solid rgba(52,211,153,0.2)"
+                  : "1px solid rgba(248,113,113,0.2)",
+                borderRadius: 999,
+                padding: "2px 8px",
+              }}
+            >
+              {maskedPolygonKey ? "Connected" : "Not set"}
+            </span>
+          </div>
+
+          {/* Update Polygon key toggle row */}
+          <button
+            onClick={() => setPolygonExpanded((v) => !v)}
+            style={{
+              width: "100%",
+              height: 44,
+              padding: "0 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "none",
+              borderTop: "1px solid var(--border)",
+              cursor: "pointer",
+              color: "var(--text2)",
+              transition: "background 0.15s ease",
+              textAlign: "left",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <PencilLine size={14} style={{ color: "var(--text2)" }} />
+            <span
+              style={{
+                fontSize: 13,
+                fontFamily: "var(--font-inter, Inter, sans-serif)",
+                flex: 1,
+              }}
+            >
+              Update API key
+            </span>
+            <ChevronRight
+              size={14}
+              style={{
+                color: "var(--text3)",
+                transform: polygonExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform 0.2s ease",
+              }}
+            />
+          </button>
+
+          {/* Polygon key expanded panel */}
+          {polygonExpanded && (
+            <div style={{ borderTop: "1px solid var(--border)", padding: 16 }}>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPolygonKey ? "text" : "password"}
+                  value={newPolygonKey}
+                  onChange={(e) => setNewPolygonKey(e.target.value)}
+                  placeholder="Enter your Polygon.io API key"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid var(--border)",
+                    padding: "0 48px 0 16px",
+                    fontFamily: "var(--font-ibm-plex-mono, monospace)",
+                    fontSize: 14,
+                    color: "var(--text)",
+                    boxSizing: "border-box",
+                    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPolygonKey((v) => !v)}
+                  style={{
+                    position: "absolute",
+                    right: 8,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: 32,
+                    height: 32,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text2)",
+                    transition: "color 0.15s ease",
+                    padding: 0,
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text2)")}
+                  aria-label={showPolygonKey ? "Hide key" : "Show key"}
+                >
+                  {showPolygonKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+
+              {polygonSaveSuccess ? (
+                <div
+                  style={{
+                    height: 44,
+                    marginTop: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                  }}
+                >
+                  <CheckCircle size={14} style={{ color: "var(--green)" }} />
+                  <span className="mono" style={{ fontSize: 13, color: "var(--green)" }}>
+                    Key saved
+                  </span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleSavePolygonKey}
+                  disabled={!newPolygonKey.trim() || polygonSaving}
+                  className="btn-accent"
+                  style={{
+                    width: "100%",
+                    height: 44,
+                    marginTop: 12,
+                    borderRadius: 12,
+                    border: "none",
+                    cursor: newPolygonKey.trim() && !polygonSaving ? "pointer" : "not-allowed",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--bg)",
+                    opacity: !newPolygonKey.trim() || polygonSaving ? 0.5 : 1,
+                    fontFamily: "var(--font-inter, Inter, sans-serif)",
+                  }}
+                >
+                  {polygonSaving ? <Loader2 size={16} className="spin" /> : "Save key"}
                 </button>
               )}
             </div>
