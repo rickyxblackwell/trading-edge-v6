@@ -149,14 +149,17 @@ export function TradesProvider({ children }: { children: React.ReactNode }) {
         setCoachingHistory(coachingRes.data.map(rowToCoachingEntry))
       }
 
-      // Pattern summary, strategy text, watchlist live in user_metadata — single source of truth across windows
-      const meta = user!.user_metadata ?? {}
+      // user.user_metadata is the cached JWT payload — stale after updateUser calls.
+      // getUser() fetches fresh metadata from Supabase server, ensuring watchlist/pattern/strategy reflect latest writes.
+      const { data: freshUserData } = await supabase.auth.getUser()
+      const meta = freshUserData?.user?.user_metadata ?? user!.user_metadata ?? {}
       const summary = typeof meta.pattern_summary === "string" ? meta.pattern_summary : undefined
       const strategy = typeof meta.strategy_text === "string" ? meta.strategy_text : undefined
       const wl = Array.isArray(meta.watchlist) ? (meta.watchlist as string[]) : undefined
       if (!cancelled && summary !== undefined) setPatternSummary(summary)
       if (!cancelled && strategy !== undefined) setStrategyText(strategy)
-      if (!cancelled && wl !== undefined) setWatchlist(wl)
+      // Only overwrite local watchlist if Supabase has items — empty Supabase must not wipe locally-added tickers
+      if (!cancelled && wl !== undefined && wl.length > 0) setWatchlist(wl)
       const rawSessionIndex = meta.session_index
       const rawBehaviorLedger = meta.behavior_ledger
       const rawMilestoneLog = meta.milestone_log

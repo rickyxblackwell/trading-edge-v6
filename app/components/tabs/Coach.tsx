@@ -697,39 +697,32 @@ function ChatView() {
             <p className="label-upper" style={{ color: "var(--text3)" }}>
               {patternSummary ? `Memory active · ${coachingHistory.length} sessions` : "Memory building…"}
             </p>
-            <div className="flex items-center gap-2">
-              {watchlist.length > 0 && (
-                <p className="label-upper" style={{ color: "var(--text3)" }}>
-                  Watching: {watchlist.join(", ")}
-                </p>
-              )}
-              {messages.length > 0 && !loading && (
-                <button
-                  onClick={saveSession}
-                  className="mono text-xs px-3 py-1.5 rounded-lg"
-                  style={{
-                    color: "var(--text3)",
-                    border: "1px solid var(--border)",
-                    background: "transparent",
-                    transition: "color 0.15s ease, border-color 0.15s ease",
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.color = "var(--accent)"
-                    e.currentTarget.style.borderColor = "var(--border-accent)"
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.color = "var(--text3)"
-                    e.currentTarget.style.borderColor = "var(--border)"
-                  }}
-                >
-                  Save &amp; New Chat
-                </button>
-              )}
-            </div>
+            {messages.length > 0 && !loading && (
+              <button
+                onClick={saveSession}
+                className="mono text-xs px-3 py-1.5 rounded-lg"
+                style={{
+                  color: "var(--text3)",
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  transition: "color 0.15s ease, border-color 0.15s ease",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = "var(--accent)"
+                  e.currentTarget.style.borderColor = "var(--border-accent)"
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = "var(--text3)"
+                  e.currentTarget.style.borderColor = "var(--border)"
+                }}
+              >
+                Save &amp; New Chat
+              </button>
+            )}
           </div>
 
-          {/* Streak display — only render when there is meaningful streak data */}
-          {(streaks.currentWin > 0 || streaks.currentLoss > 0 || streaks.ruleAdherentDays > 0) && (
+          {/* Streak + watchlist row */}
+          {(streaks.currentWin > 0 || streaks.currentLoss > 0 || streaks.ruleAdherentDays > 0 || watchlist.length > 0) && (
             <div className="flex items-center gap-3 flex-wrap">
               {streaks.currentWin > 0 && (
                 <span className="label-upper" style={{ color: "var(--green)" }}>
@@ -744,6 +737,11 @@ function ChatView() {
               {streaks.ruleAdherentDays > 0 && (
                 <span className="label-upper" style={{ color: "var(--text2)" }}>
                   Rule-adherent: <span className="mono">{streaks.ruleAdherentDays}</span>d
+                </span>
+              )}
+              {watchlist.length > 0 && (
+                <span className="label-upper" style={{ color: "var(--text3)" }}>
+                  Watching: {watchlist.join(", ")}
                 </span>
               )}
             </div>
