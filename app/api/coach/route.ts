@@ -899,34 +899,36 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
       }
     }
 
-    // D-06: write memory updates server-side before sending response (prevents silent data loss on client network drop)
-    if (sessionIndexUpdate || behaviorLedgerUpdate || streaksUpdate || milestoneUpdate || weeklyUpdate || monthlyUpdate) {
+    // D-06: Server writes memory to Supabase before responding. Eliminates silent data loss
+    // if the network drops between server response and client write.
+    const memoryUpdates: Record<string, unknown> = {}
+    if (sessionIndexUpdate !== null) {
       const existingIndex = Array.isArray(incomingSessionIndex) ? incomingSessionIndex : []
-      const updatedIndex = sessionIndexUpdate
-        ? [sessionIndexUpdate, ...existingIndex].slice(0, 60)
-        : existingIndex
+      memoryUpdates.session_index = [sessionIndexUpdate, ...existingIndex].slice(0, 60)
+    }
+    if (behaviorLedgerUpdate !== null) {
       const existingLedger = (incomingBehaviorLedger ?? {}) as BehaviorLedger
-      const updatedLedger = behaviorLedgerUpdate
-        ? Object.fromEntries(
-            Object.entries({ ...existingLedger, ...behaviorLedgerUpdate }).map(
-              ([k, v]) => [k, (existingLedger[k as keyof BehaviorLedger] ?? 0) + (v ?? 0)]
-            )
-          ) as unknown as BehaviorLedger
-        : existingLedger
+      memoryUpdates.behavior_ledger = Object.fromEntries(
+        Object.entries({ ...existingLedger, ...behaviorLedgerUpdate }).map(
+          ([k, v]) => [k, (existingLedger[k as keyof BehaviorLedger] ?? 0) + (v ?? 0)]
+        )
+      ) as unknown as BehaviorLedger
+    }
+    if (milestoneUpdate !== null) memoryUpdates.milestone_log = { ...(user.user_metadata?.milestone_log ?? {}), ...milestoneUpdate }
+    if (streaksUpdate !== null) memoryUpdates.streaks = streaksUpdate
+    if (weeklyUpdate !== null) memoryUpdates.weekly_summaries = weeklyUpdate
+    if (monthlyUpdate !== null) memoryUpdates.monthly_summaries = monthlyUpdate
+    if (newPatternSummary !== undefined && newPatternSummary !== null) memoryUpdates.pattern_summary = newPatternSummary
+
+    if (Object.keys(memoryUpdates).length > 0) {
       const { error: writeError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
         user_metadata: {
           ...user.user_metadata,
-          session_index: updatedIndex,
-          behavior_ledger: updatedLedger,
-          streaks: streaksUpdate ?? user.user_metadata?.streaks,
-          milestone_log: milestoneUpdate
-            ? { ...(user.user_metadata?.milestone_log ?? {}), ...milestoneUpdate }
-            : user.user_metadata?.milestone_log,
-          weekly_summaries: weeklyUpdate ?? user.user_metadata?.weekly_summaries,
-          monthly_summaries: monthlyUpdate ?? user.user_metadata?.monthly_summaries,
+          ...memoryUpdates,
         },
       })
       if (writeError) {
+        console.error("[coach] memory write failed:", writeError.message)
         return NextResponse.json({ error: "Memory write failed" }, { status: 500 })
       }
     }
