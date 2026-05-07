@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useTrades } from "../lib/TradesContext"
+import { useNotifications } from "../lib/NotificationContext"
 import type { Trade } from "../lib/types"
 
 interface Alert {
@@ -91,14 +92,20 @@ function detectModalAlert(trades: Trade[]): Alert | null {
 
 export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean }) {
   const { trades } = useTrades()
+  const { addNotification } = useNotifications()
   const [alert, setAlert] = useState<Alert | null>(null)
   const dismissedKeys = useRef(new Set<string>())
+  const notifiedKeys = useRef(new Set<string>())
 
   // P&L limit alerts fire immediately when trades update (no modal needed)
   useEffect(() => {
     const detected = detectPnlAlert(trades)
     if (detected && !dismissedKeys.current.has(detected.key)) {
       setAlert(detected)
+      if (!notifiedKeys.current.has(detected.key)) {
+        addNotification({ type: detected.type, title: detected.title, message: detected.message })
+        notifiedKeys.current.add(detected.key)
+      }
     } else if (!detected && (alert?.type === "daily-soft" || alert?.type === "daily-hard")) {
       setAlert(null)
     }
@@ -110,6 +117,10 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
     const detected = detectModalAlert(trades) ?? detectPnlAlert(trades)
     if (detected && !dismissedKeys.current.has(detected.key)) {
       setAlert(detected)
+      if (!notifiedKeys.current.has(detected.key)) {
+        addNotification({ type: detected.type, title: detected.title, message: detected.message })
+        notifiedKeys.current.add(detected.key)
+      }
     } else if (!detected) {
       setAlert(null)
     }

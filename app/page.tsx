@@ -12,6 +12,8 @@ import CoachTab from "./components/tabs/Coach"
 import AccountTab from "./components/tabs/Account"
 import TradeModal from "./components/TradeModal"
 import TradeAlert from "./components/TradeAlert"
+import { NotificationProvider } from "./lib/NotificationContext"
+import NotificationBell from "./components/NotificationBell"
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   {
@@ -77,6 +79,7 @@ export default function App() {
   const ActiveComponent = TAB_COMPONENTS[activeTab]
 
   return (
+    <NotificationProvider>
     <>
       {/* Ambient background orbs */}
       <div className="ambient-bg" aria-hidden="true">
@@ -277,6 +280,10 @@ export default function App() {
 
       {/* Trade behavior alerts — revenge trades, overtrading, daily limits */}
       <TradeAlert tradeModalOpen={tradeModalOpen} />
+
+      {/* Notification bell — hidden on Account tab */}
+      <NotificationBell hidden={showAccount} />
     </>
+    </NotificationProvider>
   )
 }

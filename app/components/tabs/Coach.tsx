@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useTrades } from "../../lib/TradesContext"
 import { useAuthContext } from "@/app/components/AuthProvider"
+import { useNotifications } from "../../lib/NotificationContext"
 import type { ChatMessage, CoachingEntry } from "../../lib/types"
 
 function buildCoachingContextSelection(
@@ -366,6 +367,7 @@ function ChatView() {
     weeklySummaries, updateWeeklySummaries,
     monthlySummaries, updateMonthlySummaries,
   } = useTrades()
+  const { addNotification } = useNotifications()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -550,9 +552,11 @@ function ChatView() {
         if (errType === "rate_limit" && (errProvider === "claude" || errProvider === "gemini")) {
           setRateLimitNotice({ message: errMsg, provider: errProvider })
           setError(null)
+          addNotification({ type: "rate-limit", title: "Rate Limit", message: errMsg })
         } else if (errType === "key_error") {
           setKeyErrorNotice({ message: errMsg, provider: errProvider })
           setError(null)
+          addNotification({ type: "key-error", title: "API Key Error", message: errMsg })
         } else {
           setError(errMsg)
           setRateLimitNotice(null)
