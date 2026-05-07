@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-05)
 
 Phase: 07 (market-data-api-infrastructure) — EXECUTING
 Status: Plan 07-02 complete; ready for plan 07-03 (route.ts server-side refactor)
-Last activity: 2026-05-07 -- Phase 07 plan 02 complete (AV + Polygon key cards, human verified)
+Last activity: 2026-05-06 -- Completed quick task 260506-szh: notification bell icon for app shell
 
 Progress: [███░░░░░░░] 30% (Phase 1 complete, Phase 2 executing — plans 01+02 done, plans 03-05 pending)
 
@@ -72,6 +72,12 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 None yet.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260506-szh | Notification bell icon — app shell log with sessionStorage, NotificationContext, badge dot, slide-up panel | 2026-05-06 | 9e62284 | [260506-szh-notification-bell](./quick/260506-szh-notification-bell/) |
 
 ### Blockers/Concerns
 
