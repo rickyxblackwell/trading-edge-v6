@@ -100,3 +100,14 @@ export interface MonthlySummary {
   bestWeekOf: string
   worstWeekOf: string
 }
+
+export type NotificationType = "revenge" | "overtrading" | "daily-soft" | "daily-hard" | "rate-limit" | "key-error"
+
+export interface AppNotification {
+  id: string
+  type: NotificationType
+  title: string
+  message: string
+  timestamp: string
+  read: boolean
+}
