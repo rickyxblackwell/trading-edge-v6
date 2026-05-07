@@ -11,6 +11,7 @@ import StatsTab from "./components/tabs/Stats"
 import CoachTab from "./components/tabs/Coach"
 import AccountTab from "./components/tabs/Account"
 import TradeModal from "./components/TradeModal"
+import TradeAlert from "./components/TradeAlert"
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   {
@@ -178,56 +179,67 @@ export default function App() {
             paddingTop: "env(safe-area-inset-top)",
           }}
         >
-          <div className="content-wrap py-4 fade-up" key={showAccount ? "account" : activeTab}>
-            {showAccount ? (
-              <AccountTab />
-            ) : activeTab === "log" ? (
-              <>
-                <div className="flex justify-center px-4 pb-4">
-                  <div
-                    className="relative flex rounded-xl overflow-hidden"
-                    style={{ border: "1px solid var(--border)" }}
-                  >
-                    {/* Sliding bubble */}
-                    <div
-                      aria-hidden="true"
-                      className="absolute inset-0 w-1/2 pointer-events-none"
-                      style={{
-                        background: "var(--accent3)",
-                        border: "1px solid var(--border-accent)",
-                        borderRadius: "inherit",
-                        transform: journalView === "log" ? "translateX(0%)" : "translateX(100%)",
-                        transition: "transform 0.2s ease",
-                      }}
-                    />
-                    <button
-                      onClick={() => setJournalView("log")}
-                      className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
-                      style={{
-                        color: journalView === "log" ? "var(--accent)" : "var(--text3)",
-                        transition: "color 0.2s ease",
-                      }}
-                    >
-                      Journal
-                    </button>
-                    <button
-                      onClick={() => setJournalView("stats")}
-                      className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
-                      style={{
-                        color: journalView === "stats" ? "var(--accent)" : "var(--text3)",
-                        transition: "color 0.2s ease",
-                      }}
-                    >
-                      Stats
-                    </button>
-                  </div>
-                </div>
-                {journalView === "log" ? <LogTab /> : <StatsTab />}
-              </>
-            ) : (
-              <ActiveComponent />
-            )}
+          {/* Always-mounted coach — preserves AI state and in-flight responses during tab navigation */}
+          <div
+            className="content-wrap py-4"
+            style={{ display: !showAccount && activeTab === "coach" ? "block" : "none" }}
+          >
+            <CoachTab />
           </div>
+
+          {/* All other tabs — remounted on navigation */}
+          {(showAccount || activeTab !== "coach") && (
+            <div className="content-wrap py-4 fade-up" key={showAccount ? "account" : activeTab}>
+              {showAccount ? (
+                <AccountTab />
+              ) : activeTab === "log" ? (
+                <>
+                  <div className="flex justify-center px-4 pb-4">
+                    <div
+                      className="relative flex rounded-xl overflow-hidden"
+                      style={{ border: "1px solid var(--border)" }}
+                    >
+                      {/* Sliding bubble */}
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 w-1/2 pointer-events-none"
+                        style={{
+                          background: "var(--accent3)",
+                          border: "1px solid var(--border-accent)",
+                          borderRadius: "inherit",
+                          transform: journalView === "log" ? "translateX(0%)" : "translateX(100%)",
+                          transition: "transform 0.2s ease",
+                        }}
+                      />
+                      <button
+                        onClick={() => setJournalView("log")}
+                        className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
+                        style={{
+                          color: journalView === "log" ? "var(--accent)" : "var(--text3)",
+                          transition: "color 0.2s ease",
+                        }}
+                      >
+                        Journal
+                      </button>
+                      <button
+                        onClick={() => setJournalView("stats")}
+                        className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
+                        style={{
+                          color: journalView === "stats" ? "var(--accent)" : "var(--text3)",
+                          transition: "color 0.2s ease",
+                        }}
+                      >
+                        Stats
+                      </button>
+                    </div>
+                  </div>
+                  {journalView === "log" ? <LogTab /> : <StatsTab />}
+                </>
+              ) : (
+                <ActiveComponent />
+              )}
+            </div>
+          )}
         </main>
       </div>
 
@@ -262,6 +274,9 @@ export default function App() {
 
       {/* Global trade entry modal */}
       <TradeModal open={tradeModalOpen} onClose={() => setTradeModalOpen(false)} />
+
+      {/* Trade behavior alerts — revenge trades, overtrading, daily limits */}
+      <TradeAlert tradeModalOpen={tradeModalOpen} />
     </>
   )
 }

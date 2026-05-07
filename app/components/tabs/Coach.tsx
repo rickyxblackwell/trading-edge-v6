@@ -155,7 +155,7 @@ function ThinkingBubble() {
       </div>
       <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm px-4 py-3" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)" }}>
         {[0, 1, 2].map(i => (
-          <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--purple)", animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+          <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--purple)", animation: `bounce-dot 1.4s ease-in-out ${i * 0.22}s infinite` }} />
         ))}
       </div>
     </div>
@@ -370,10 +370,109 @@ function ChatView() {
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rateLimitNotice, setRateLimitNotice] = useState<{ message: string; provider: "claude" | "gemini" } | null>(null)
+  const [keyErrorNotice, setKeyErrorNotice] = useState<{ message: string; provider?: "claude" | "gemini" } | null>(null)
   const [activeMode, setActiveMode] = useState<string>("chat")
   const [showOnboarding, setShowOnboarding] = useState(true)
+  const [infoTab, setInfoTab] = useState<"commands" | "memory" | "stack">("commands")
   const textRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Refs for beforeunload — React state updates are async so we mirror sync
+  const messagesRef = useRef<ChatMessage[]>([])
+  const tradesRef = useRef(trades)
+  const lastTitleRef = useRef("")
+  const sessionModeRef = useRef<string>("chat")
+
+  useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { tradesRef.current = trades }, [trades])
+
+  // Auto-save to localStorage on page/app close — beforeunload is unreliable on iOS Safari
+  // so we also listen for pagehide and visibilitychange (hidden), which fire more reliably
+  useEffect(() => {
+    const flush = () => {
+      const msgs = messagesRef.current
+      if (msgs.length === 0) return
+      const assistantMsgs = msgs.filter(m => m.role === "assistant")
+      if (assistantMsgs.length === 0) return
+
+      const title =
+        lastTitleRef.current ||
+        msgs.find(m => m.role === "user")?.content.slice(0, 60) ||
+        "Chat session"
+
+      const lastReply = assistantMsgs[assistantMsgs.length - 1].content
+      const entry: CoachingEntry = {
+        id: genId(),
+        timestamp: new Date().toISOString(),
+        tradeCount: tradesRef.current.length,
+        title,
+        fullContent: lastReply,
+        archived: false,
+        mode: (sessionModeRef.current || "chat") as CoachingEntry["mode"],
+        marketSnapshot: "",
+        patterns: "",
+        process: "",
+        risk: "",
+        priority: lastReply.slice(0, 150),
+        momentum: "neutral",
+      }
+
+      try {
+        const raw = localStorage.getItem("edge_v5_coaching_history")
+        const existing: CoachingEntry[] = raw ? JSON.parse(raw) : []
+        existing.push(entry)
+        if (existing.length > 60) existing.splice(0, existing.length - 60)
+        localStorage.setItem("edge_v5_coaching_history", JSON.stringify(existing))
+        messagesRef.current = []
+      } catch {}
+    }
+
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush() }
+    window.addEventListener("beforeunload", flush)
+    window.addEventListener("pagehide", flush)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener("beforeunload", flush)
+      window.removeEventListener("pagehide", flush)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [])
+
+  const saveSession = () => {
+    const msgs = messagesRef.current
+    if (msgs.length === 0) return
+    const assistantMsgs = msgs.filter(m => m.role === "assistant")
+    if (assistantMsgs.length === 0) return
+
+    const title =
+      lastTitleRef.current ||
+      msgs.find(m => m.role === "user")?.content.slice(0, 60) ||
+      "Chat session"
+
+    const entry: CoachingEntry = {
+      id: genId(),
+      timestamp: new Date().toISOString(),
+      tradeCount: tradesRef.current.length,
+      title,
+      fullContent: assistantMsgs[assistantMsgs.length - 1].content,
+      archived: false,
+      mode: (sessionModeRef.current || "chat") as CoachingEntry["mode"],
+      marketSnapshot: "",
+      patterns: "",
+      process: "",
+      risk: "",
+      priority: assistantMsgs[assistantMsgs.length - 1].content.slice(0, 150),
+      momentum: "neutral",
+    }
+
+    addCoachingEntry(entry)
+    messagesRef.current = []
+    lastTitleRef.current = ""
+    sessionModeRef.current = "chat"
+    setMessages([])
+    setShowOnboarding(true)
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -391,6 +490,14 @@ function ChatView() {
 
     const mode = (modeOverride ?? "chat") as CoachingEntry["mode"]
     setActiveMode(mode)
+    sessionModeRef.current = mode
+
+    // Build history from current messages BEFORE adding the new user turn
+    const conversationHistory = messages.slice(-18).map(m => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }))
+
     const userMsg: ChatMessage = { id: genId(), role: "user", content: text, timestamp: new Date().toISOString(), mode }
     setMessages(prev => [...prev, userMsg])
     setInput("")
@@ -431,14 +538,38 @@ function ChatView() {
           coachingContextFull: buildCoachingContextSelection(coachingHistory),
           weeklySummaries,
           monthlySummaries,
+          conversationHistory,
         }),
       })
 
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Coach unavailable")
+      if (!res.ok) {
+        const errMsg = typeof data?.error === "string" ? data.error : "Coach unavailable — try again."
+        const errType = data?.type as ("rate_limit" | "key_error" | undefined)
+        const errProvider = data?.provider as ("claude" | "gemini" | undefined)
+        if (errType === "rate_limit" && (errProvider === "claude" || errProvider === "gemini")) {
+          setRateLimitNotice({ message: errMsg, provider: errProvider })
+          setError(null)
+        } else if (errType === "key_error") {
+          setKeyErrorNotice({ message: errMsg, provider: errProvider })
+          setError(null)
+        } else {
+          setError(errMsg)
+          setRateLimitNotice(null)
+          setKeyErrorNotice(null)
+        }
+        return
+      }
+
+      setError(null)
+      setRateLimitNotice(null)
+      setKeyErrorNotice(null)
 
       const assistantMsg: ChatMessage = { id: genId(), role: "assistant", content: data.reply, timestamp: new Date().toISOString(), mode }
       setMessages(prev => [...prev, assistantMsg])
+
+      // Track session title for Save & New Chat (use most recent title from AI)
+      if (data.sessionTitle) lastTitleRef.current = data.sessionTitle
 
       // Update rolling pattern summary
       if (data.newPatternSummary) updatePatternSummary(data.newPatternSummary)
@@ -456,30 +587,8 @@ function ChatView() {
         updateWatchlist(data.watchlistAdd || [], data.watchlistRemove || [])
       }
 
-      // Save persistent history entry
-      const title = data.sessionTitle
-        || (mode === "chat" ? text.slice(0, 60) + (text.length > 60 ? "…" : "") : MODE_LABELS[mode] + " session")
-
-      const entry: CoachingEntry = {
-        id: genId(),
-        timestamp: new Date().toISOString(),
-        tradeCount: trades.length,
-        title,
-        fullContent: data.reply,
-        archived: false,
-        mode,
-        // legacy fields
-        marketSnapshot: data.coaching?.marketSnapshot || "",
-        patterns: data.coaching?.patterns || "",
-        process: data.coaching?.process || "",
-        risk: data.coaching?.risk || "",
-        priority: data.coaching?.priority || data.reply.slice(0, 150),
-        momentum: data.coaching?.momentum || "neutral",
-      }
-      addCoachingEntry(entry)
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Coach unavailable")
+    } catch {
+      setError("Coach unavailable — try again.")
     } finally {
       setLoading(false)
     }
@@ -500,20 +609,119 @@ function ChatView() {
   }
 
   return (
+    <>
+    {/* Key-error banner — fixed overlay, above modals */}
+    {keyErrorNotice && (
+      <div
+        role="alert"
+        aria-live="assertive"
+        style={{
+          position: "fixed",
+          top: "calc(env(safe-area-inset-top) + 12px)",
+          left: 12,
+          right: 12,
+          zIndex: 500,
+          background: "var(--red-subtle)",
+          border: "1px solid var(--red-border)",
+          borderRadius: 14,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          backdropFilter: "blur(12px)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <p className="text-xs font-semibold" style={{ color: "var(--red)", marginBottom: 2 }}>{keyErrorNotice.message}</p>
+          <p className="text-xs" style={{ color: "var(--text2)" }}>Update your API keys in the Account tab to continue.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setKeyErrorNotice(null)}
+          aria-label="Dismiss"
+          style={{ flexShrink: 0, background: "var(--red-subtle)", color: "var(--red)", border: "1px solid var(--red-border)", borderRadius: 8, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "background 0.2s ease" }}
+        >
+          Dismiss
+        </button>
+      </div>
+    )}
+
+    {/* Rate-limit banner — fixed overlay, above modals */}
+    {rateLimitNotice && (
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          position: "fixed",
+          top: "calc(env(safe-area-inset-top) + 12px)",
+          left: 12,
+          right: 12,
+          zIndex: 500,
+          background: "var(--yellow-subtle)",
+          border: "1px solid var(--yellow-border)",
+          borderRadius: 14,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          backdropFilter: "blur(12px)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <p className="text-xs font-semibold" style={{ color: "var(--yellow)", marginBottom: 2 }}>{rateLimitNotice.message}</p>
+          <p className="text-xs" style={{ color: "var(--text2)" }}>Provider: {rateLimitNotice.provider === "claude" ? "Claude" : "Gemini"}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setRateLimitNotice(null)}
+          aria-label="Dismiss"
+          style={{ flexShrink: 0, background: "var(--yellow-border)", color: "var(--yellow)", border: "1px solid var(--yellow-border)", borderRadius: 8, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "background 0.2s ease" }}
+        >
+          Dismiss
+        </button>
+      </div>
+    )}
+
     <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 130px)" }}>
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-4 pb-2">
 
-          {/* Memory status */}
+          {/* Memory status + Save & New Chat */}
           <div className="flex items-center justify-between flex-wrap gap-1">
             <p className="label-upper" style={{ color: "var(--text3)" }}>
               {patternSummary ? `Memory active · ${coachingHistory.length} sessions` : "Memory building…"}
             </p>
-            {watchlist.length > 0 && (
-              <p className="label-upper" style={{ color: "var(--text3)" }}>
-                Watching: {watchlist.join(", ")}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {watchlist.length > 0 && (
+                <p className="label-upper" style={{ color: "var(--text3)" }}>
+                  Watching: {watchlist.join(", ")}
+                </p>
+              )}
+              {messages.length > 0 && !loading && (
+                <button
+                  onClick={saveSession}
+                  className="mono text-xs px-3 py-1.5 rounded-lg"
+                  style={{
+                    color: "var(--text3)",
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    transition: "color 0.15s ease, border-color 0.15s ease",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.color = "var(--accent)"
+                    e.currentTarget.style.borderColor = "var(--border-accent)"
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.color = "var(--text3)"
+                    e.currentTarget.style.borderColor = "var(--border)"
+                  }}
+                >
+                  Save &amp; New Chat
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Streak display — only render when there is meaningful streak data */}
@@ -551,14 +759,14 @@ function ChatView() {
             ))}
           </div>
 
-          {/* Error */}
+          {/* Generic error — inline, no type field */}
           {error && (
-            <div className="rounded-xl px-4 py-3" style={{ background: "rgba(255,61,90,0.08)", border: "1px solid rgba(255,61,90,0.3)" }}>
+            <div className="rounded-xl px-4 py-3" style={{ background: "var(--red-subtle)", border: "1px solid var(--red-border)" }}>
               <p className="mono text-xs" style={{ color: "var(--red)" }}>{error}</p>
             </div>
           )}
 
-          {/* Onboarding modal — session-local, no persistence */}
+          {/* Info box — session-local, 3 tabs */}
           {showOnboarding && messages.length === 0 && (
             <div className="glass rounded-2xl overflow-hidden" style={{ width: "100%" }}>
 
@@ -572,62 +780,109 @@ function ChatView() {
                 </p>
               </div>
 
-              <div className="p-3 space-y-2">
+              {/* Tab bar */}
+              <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
+                {(["commands", "memory", "stack"] as const).map(tab => {
+                  const labels = { commands: "Commands", memory: "Memory", stack: "AI Stack" }
+                  const colors = { commands: "var(--accent)", memory: "var(--purple)", stack: "var(--green)" }
+                  const active = infoTab === tab
+                  return (
+                    <button key={tab} onClick={() => setInfoTab(tab)}
+                      className="flex-1 mono text-xs py-2.5"
+                      style={{
+                        color: active ? colors[tab] : "var(--text3)",
+                        borderBottom: active ? `2px solid ${colors[tab]}` : "2px solid transparent",
+                        background: "transparent",
+                        transition: "color 0.15s ease",
+                      }}>
+                      {labels[tab]}
+                    </button>
+                  )
+                })}
+              </div>
 
-                {/* Row 1 — Commands */}
-                <div className="rounded-xl p-3" style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid var(--border)",
-                  borderLeft: "3px solid var(--accent)",
-                }}>
-                  <p className="label-upper mb-1.5" style={{ color: "var(--accent)" }}>Commands</p>
-                  <ul className="space-y-0.5">
-                    {[
-                      "watch TICKER — add to watchlist (Market Pulse scans these first)",
-                      "unwatch TICKER — remove from watchlist",
-                      "Type anything → Chat mode  ·  or tap a mode button above",
-                    ].map(item => (
-                      <li key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</li>
-                    ))}
-                  </ul>
-                </div>
+              {/* Tab content */}
+              <div className="p-3">
 
-                {/* Row 2 — Memory */}
-                <div className="rounded-xl p-3" style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid var(--border)",
-                  borderLeft: "3px solid var(--purple)",
-                }}>
-                  <p className="label-upper mb-1.5" style={{ color: "var(--purple)" }}>Memory — persists across sessions</p>
-                  <ul className="space-y-0.5">
+                {infoTab === "commands" && (
+                  <div className="space-y-1">
                     {[
-                      "Pattern summary — updated after each Analyze session",
-                      "Session index — titles & topics recalled from your full history",
-                      "Behavior ledger — recurring strengths & weaknesses tracked over time",
-                      "Milestones & streaks — win/loss streaks and rule-adherent days",
-                    ].map(item => (
-                      <li key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</li>
+                      ["Analyze Journal", "deep review of trades vs. your strategy rules"],
+                      ["Market Pulse", "live macro + instrument data for your watchlist"],
+                      ["Strategy Review", "critiques your SMC/ICT approach with live research"],
+                      ["watch TICKER", "add an instrument to your watchlist"],
+                      ["unwatch TICKER", "remove an instrument from your watchlist"],
+                      ["ask anything", "trade recaps, R-mult, pattern checks, rule questions"],
+                    ].map(([cmd, desc]) => (
+                      <div key={cmd} className="flex gap-2 text-xs items-baseline" style={{ lineHeight: 1.75 }}>
+                        <span className="mono flex-shrink-0" style={{ color: "var(--accent)", width: 120 }}>{cmd}</span>
+                        <span style={{ color: "var(--text2)" }}>{desc}</span>
+                      </div>
                     ))}
-                  </ul>
-                </div>
+                  </div>
+                )}
 
-                {/* Row 3 — AI routing */}
-                <div className="rounded-xl p-3" style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid var(--border)",
-                  borderLeft: "3px solid var(--green)",
-                }}>
-                  <p className="label-upper mb-1.5" style={{ color: "var(--green)" }}>AI Stack</p>
-                  <ul className="space-y-0.5">
+                {infoTab === "memory" && (
+                  <div className="space-y-2">
                     {[
-                      "Claude Sonnet — all coaching responses, every mode",
-                      "Gemini 2.5 Flash — live web research (Market Pulse & Strategy Review only)",
-                      "Yahoo Finance — real-time prices for your watchlist tickers",
-                    ].map(item => (
-                      <li key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</li>
+                      {
+                        label: "Always On",
+                        color: "var(--purple)",
+                        bg: "rgba(168,85,247,0.06)",
+                        items: [
+                          "Pattern summary — updated every Analyze session",
+                          "Session index — full title history recalled on demand",
+                          "Behavior ledger — recurring strengths & weaknesses",
+                          "Milestones · streaks · weekly & monthly summaries",
+                        ],
+                      },
+                      {
+                        label: "This Session",
+                        color: "var(--accent)",
+                        bg: "rgba(56,189,248,0.06)",
+                        items: [
+                          "Full conversation thread stays in context",
+                          "Claude remembers what it said 3 turns ago",
+                        ],
+                      },
+                      {
+                        label: "On-Demand",
+                        color: "var(--green)",
+                        bg: "rgba(0,229,160,0.06)",
+                        items: [
+                          "Market data fetched when your question warrants it",
+                          "News, indicators, macro — Claude decides what to pull",
+                        ],
+                      },
+                    ].map(tier => (
+                      <div key={tier.label} className="rounded-xl p-2.5" style={{ background: tier.bg, border: `1px solid ${tier.color}25`, borderLeft: `3px solid ${tier.color}` }}>
+                        <p className="label-upper mb-1" style={{ color: tier.color }}>{tier.label}</p>
+                        {tier.items.map(item => (
+                          <p key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</p>
+                        ))}
+                      </div>
                     ))}
-                  </ul>
-                </div>
+                  </div>
+                )}
+
+                {infoTab === "stack" && (
+                  <div className="space-y-1.5">
+                    {[
+                      { name: "Claude Sonnet", role: "coaching & reasoning — all 4 modes", color: "var(--purple)" },
+                      { name: "Gemini Flash", role: "live web search — news & strategy research", color: "var(--accent)" },
+                      { name: "Yahoo Finance", role: "real-time futures snapshot", color: "var(--green)" },
+                      { name: "Alpha Vantage", role: "RSI · MACD · VWAP · news sentiment · earnings", color: "var(--yellow)" },
+                      { name: "FRED API", role: "Fed funds · CPI · NFP · GDP · yield curve", color: "var(--text2)" },
+                      { name: "Polygon.io", role: "CME futures — ES · NQ · MES · MNQ · YM · MYM", color: "var(--text2)" },
+                    ].map(({ name, role, color }) => (
+                      <div key={name} className="flex gap-2 items-start text-xs" style={{ lineHeight: 1.65 }}>
+                        <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                        <span className="mono flex-shrink-0" style={{ color, minWidth: 112 }}>{name}</span>
+                        <span style={{ color: "var(--text3)" }}>{role}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
               </div>
 
@@ -676,7 +931,7 @@ function ChatView() {
             value={input}
             onChange={e => { setInput(e.target.value); adjustHeight() }}
             onKeyDown={handleKeyDown}
-            placeholder={loading ? "Coach is thinking…" : "Ask your coach anything… (Enter to send)"}
+            placeholder={loading ? "Coach is thinking…" : "ask me anything..."}
             disabled={loading}
             rows={1}
             className="flex-1 resize-none outline-none text-sm mono bg-transparent"
@@ -695,6 +950,7 @@ function ChatView() {
         </p>
       </div>
     </div>
+    </>
   )
 }
 

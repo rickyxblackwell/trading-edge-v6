@@ -187,7 +187,7 @@ type ToolDeps = {
 }
 
 async function executeToolCall(
-  block: Anthropic.Beta.BetaToolUseBlock,
+  block: Anthropic.ToolUseBlock,
   deps: ToolDeps
 ): Promise<{ toolUseId: string; result: string }> {
   const { name, id, input } = block
@@ -492,7 +492,6 @@ export async function POST(req: NextRequest) {
     const geminiApiKey = user.user_metadata?.gemini_api_key as string | undefined
 
     const claudeApiKey = user.user_metadata?.claude_api_key as string | undefined
-    const avApiKey = user.user_metadata?.av_api_key as string | undefined
     const polygonApiKey = user.user_metadata?.polygon_api_key as string | undefined
 
     body = await req.json()
@@ -733,20 +732,16 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
     const finalSystemContext = claudeSystemContext
 
     // Build conversation history — cap at last 18 messages (9 turns) for context window budget
-    const priorMessages: Anthropic.Beta.BetaMessageParam[] = Array.isArray(conversationHistory)
+    const priorMessages: Anthropic.MessageParam[] = Array.isArray(conversationHistory)
       ? conversationHistory
           .slice(-18)
           .map(m => ({ role: m.role as "user" | "assistant", content: m.content }))
       : []
 
-    const messages: Anthropic.Beta.BetaMessageParam[] = [
+    const messages: Anthropic.MessageParam[] = [
       ...priorMessages,
       { role: "user", content: userPrompt },
     ]
-
-    const mcpServers = avApiKey
-      ? [{ type: "url" as const, url: `https://mcp.alphavantage.co/mcp?apikey=${encodeURIComponent(avApiKey)}`, name: "alphavantage" }]
-      : []
 
     // 07-03 Task 3 deleted the original watchlistSymbols const from the pre-fetch block.
     // This is now the single canonical declaration in the POST handler scope (no shadowing).
@@ -758,14 +753,12 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
       polygonTier: process.env.POLYGON_TIER as "full" | "forbidden" | "endpoint_unknown" | undefined,
     }
 
-    let response = await anthropic.beta.messages.create({
+    let response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: finalSystemContext,
       messages,
       tools: localTools,
-      mcp_servers: mcpServers,
-      betas: ["mcp-client-2025-11-20"],
     })
 
     let loopCount = 0
@@ -773,11 +766,11 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
     while (response.stop_reason === "tool_use" && loopCount < MAX_LOOP_ITERATIONS) {
       loopCount++
       const toolUseBlocks = response.content.filter(
-        (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use"
+        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
       )
       const toolResults = await Promise.all(toolUseBlocks.map(b => executeToolCall(b, toolDeps)))
 
-      messages.push({ role: "assistant", content: response.content })
+      messages.push({ role: "assistant", content: response.content as Anthropic.MessageParam["content"] })
       messages.push({
         role: "user",
         content: toolResults.map(r => ({
@@ -787,20 +780,18 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
         }))
       })
 
-      response = await anthropic.beta.messages.create({
+      response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
         system: finalSystemContext,
         messages,
         tools: localTools,
-        mcp_servers: mcpServers,
-        betas: ["mcp-client-2025-11-20"],
       })
     }
 
     // Extract final text from the last assistant message
     const textBlocks = response.content.filter(
-      (b): b is Anthropic.Beta.BetaTextBlock => b.type === "text"
+      (b): b is Anthropic.TextBlock => b.type === "text"
     )
     const rawText = textBlocks.map(b => b.text).join("\n").trim()
 
@@ -998,6 +989,13 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
       return NextResponse.json(
         { error: "Quota exceeded — check your API plan limits.", type: "rate_limit" },
         { status: 429 }
+      )
+    }
+
+    if (message.includes("credit balance") || message.includes("Plans & Billing") || message.includes("billing")) {
+      return NextResponse.json(
+        { error: "Anthropic account has no credits — add credits at console.anthropic.com/settings/plans.", type: "key_error", provider: "claude" },
+        { status: 402 }
       )
     }
 
