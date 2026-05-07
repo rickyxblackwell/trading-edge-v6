@@ -4,6 +4,100 @@ import Anthropic from "@anthropic-ai/sdk"
 import { createClient } from "@/lib/supabase/server"
 import { fetchFuturesSnapshot } from "@/app/lib/marketData"
 import type { BehaviorLedger, MilestoneLog, Streaks, SessionIndexEntry, WeeklySummary, MonthlySummary } from "@/app/lib/types"
+import { unstable_cache } from "next/cache"
+import { createClient as createSupabaseAdmin } from "@supabase/supabase-js"
+
+const supabaseAdmin = createSupabaseAdmin(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
+
+function getTradingDayKey(): string {
+  const now = new Date()
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }))
+  const day = et.getDay()
+  if (day === 0) et.setDate(et.getDate() - 2)
+  if (day === 6) et.setDate(et.getDate() - 1)
+  return et.toISOString().split("T")[0]
+}
+
+async function fetchFREDSeries(seriesId: string): Promise<string> {
+  const apiKey = process.env.FRED_API_KEY
+  if (!apiKey) return `[FRED ${seriesId}: no FRED_API_KEY configured]`
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${encodeURIComponent(seriesId)}&api_key=${encodeURIComponent(apiKey)}&file_type=json&sort_order=desc&limit=5`
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      if (res.status === 429) return `[FRED ${seriesId}: rate limited]`
+      return `[FRED ${seriesId}: HTTP ${res.status}]`
+    }
+    const data = await res.json() as { observations: Array<{ date: string; value: string }> }
+    const obs = data.observations.filter(o => o.value !== ".").slice(0, 3)
+    if (obs.length === 0) return `[FRED ${seriesId}: no data]`
+    return `${seriesId}: ${obs.map(o => `${o.date}=${o.value}`).join(", ")}`
+  } catch {
+    return `[FRED ${seriesId}: fetch failed]`
+  }
+}
+
+async function fetchPolygonFutures(symbol: string, apiKey: string): Promise<string> {
+  // Wave 0 (.planning/phases/07-market-data-api-infrastructure/07-01-WAVE0-LOG.md): polygon_tier = full
+  try {
+    const lookupUrl = `https://api.polygon.io/v3/reference/tickers?market=futures&active=true&search=${encodeURIComponent(symbol)}&limit=1&apiKey=${encodeURIComponent(apiKey)}`
+    const lookupRes = await fetch(lookupUrl)
+    if (lookupRes.status === 403) return `[Polygon ${symbol}: futures requires plan upgrade]`
+    if (!lookupRes.ok) return `[Polygon ${symbol}: HTTP ${lookupRes.status}]`
+    const lookupData = await lookupRes.json() as { results?: Array<{ ticker: string }> }
+    const ticker = lookupData.results?.[0]?.ticker
+    if (!ticker) return `[Polygon ${symbol}: no active contract found]`
+
+    const today = new Date().toISOString().split("T")[0]
+    const start = new Date(Date.now() - 30 * 86400_000).toISOString().split("T")[0]
+    const aggUrl = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/day/${start}/${today}?adjusted=true&sort=desc&limit=10&apiKey=${encodeURIComponent(apiKey)}`
+    const aggRes = await fetch(aggUrl)
+    if (aggRes.status === 403) return `[Polygon ${symbol}: futures requires plan upgrade]`
+    if (!aggRes.ok) return `[Polygon ${symbol}: HTTP ${aggRes.status}]`
+    const aggData = await aggRes.json() as { results?: Array<{ t: number; o: number; h: number; l: number; c: number; v: number }> }
+    const bars = aggData.results ?? []
+    if (bars.length === 0) return `[Polygon ${symbol}: no recent bars]`
+    const formatted = bars.slice(0, 10).map(b => {
+      const d = new Date(b.t).toISOString().split("T")[0]
+      return `${d} O=${b.o} H=${b.h} L=${b.l} C=${b.c} V=${b.v}`
+    }).join(" | ")
+    return `${symbol} (${ticker}) last ${bars.length} bars: ${formatted}`
+  } catch {
+    return `[Polygon ${symbol}: fetch failed]`
+  }
+}
+
+async function fetchGeminiSearch(query: string, geminiApiKey: string): Promise<string> {
+  try {
+    const genAI = new GoogleGenAI({ apiKey: geminiApiKey })
+    const res = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: query,
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
+    })
+    return res.text?.trim() ?? "[Gemini search: empty response]"
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota")) {
+      throw new Error("GEMINI_RATE_LIMIT")
+    }
+    if (msg.includes("401") || msg.includes("403") || msg.includes("API_KEY")) {
+      throw new Error("GEMINI_INVALID_KEY")
+    }
+    return "[Gemini search: failed]"
+  }
+}
 
 const lastCallTime = new Map<string, number>()
 const RATE_LIMIT_MS = 15_000
@@ -273,6 +367,7 @@ export async function POST(req: NextRequest) {
       coachingContextFull,
       weeklySummaries,
       monthlySummaries,
+      conversationHistory,
     } = body as {
       message: string
       mode: string
@@ -290,6 +385,7 @@ export async function POST(req: NextRequest) {
       coachingContextFull: Array<{ title: string; timestamp: string; mode: string; content: string }>
       weeklySummaries: Array<{ weekOf: string; trades: number; pnl: number; winRate: number; topSession: string; topViolation: string }>
       monthlySummaries: Array<{ monthOf: string; trades: number; pnl: number; winRate: number; bestWeekOf: string; worstWeekOf: string }>
+      conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
     }
 
     const sid = (sessionId as string) || "default"
@@ -402,7 +498,37 @@ Top weaknesses: ${weaknessProfile}
 ${streaksContext ? `Streaks: ${streaksContext}` : ""}
 ${milestoneContext ? `Milestones: ${milestoneContext}` : ""}
 
-You are an elite prop futures trading coach. Be direct, specific, and concise. Use markdown formatting (## headers, bullet points). Reference actual trade data. Never give generic advice.
+COACH IDENTITY & PROTOCOLS
+
+You are a disciplined prop trading coach and honest mentor. Process-first, outcome-second. You've seen every psychological trap and you don't let traders off the hook. Your job is to develop the trader, not validate them.
+
+CORE PRINCIPLES:
+- Process beats outcome. A losing trade with clean execution is better than a winning trade with sloppy entries. Say so when it applies.
+- Psychology is the primary failure mode — not indicators, not markets. Treat it as the main event.
+- Ego is the enemy. Confidence inflated by wins leads directly to the biggest giveback losses. Never feed it.
+
+ON WINS: One or two sentences maximum. Acknowledge clean execution briefly, identify anything sloppy even if it was profitable, then move on. Do not linger. Do not inflate.
+
+ON LOSSES: One brief human line acknowledging the sting — then spend real time on the breakdown. What rule was broken or bent? What emotional state got here? What does the data say about this pattern?
+
+PSYCHOLOGY RED FLAGS — flag these immediately and by name whenever detected in trade data or messages. These are the primary causes of account damage:
+- Revenge trading: two or more trades placed within minutes of each other following a loss. Name it directly.
+- Overconfident overtrading: position size spikes or trade frequency jumps after a large win. Name it.
+- Imagining setups: entering without 3+ confluences confirmed. The setup wasn't there — say so.
+- Skipping analysis phases: jumping from HTF bias to execution without working the TF ladder.
+- Breaking the giveback rule: continuing after hitting daily or per-loss limits. No exceptions, no context makes this acceptable.
+
+COMMUNICATION STYLE:
+Precise and professional with edge. Direct opinions — no hedging. Short sentences. Strong verbs. No performative positivity. Omit filler phrases like "that said", "however", "it's worth noting". Dry observations are fine. Only say what earns its place.
+
+ABSOLUTE RULES:
+1. Never praise sloppy execution because it was profitable. Luck and skill are not the same.
+2. Never give buy/sell signals, price targets, or entry recommendations. Develop the trader, not the trade.
+3. Never open with filler: no "Great question!", "Certainly!", "Absolutely!", "Of course!", "Sure!". Start with substance.
+4. Never moralize: no "you'll get it next time", "stay positive", "keep your head up". The market doesn't care.
+5. Every response must reference actual trade data — specific dates, instruments, confluence counts, R-multiples, or session context from what's provided. No generic coaching.
+
+Use markdown formatting (## headers, bullet points) for structured responses. Plain prose for conversational chat.
 
 SPECIAL COMMANDS — include at the very end of your response when applicable (no markdown, one per line):
 WATCHLIST_ADD: TICKER — when the user asks to track a symbol
@@ -488,12 +614,19 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
       ? `${claudeSystemContext}\n\nWEB RESEARCH (live search results):\n${webResearch}`
       : claudeSystemContext
 
+    // Build conversation history — cap at last 18 messages (9 turns) for context window budget
+    const priorMessages = Array.isArray(conversationHistory)
+      ? conversationHistory
+          .slice(-18)
+          .map(m => ({ role: m.role as "user" | "assistant", content: m.content }))
+      : []
+
     // Step 2: Claude generates the user-facing response for ALL modes
     const claudeRes = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: finalSystemContext,
-      messages: [{ role: "user", content: userPrompt }],
+      messages: [...priorMessages, { role: "user", content: userPrompt }],
     })
     const firstBlock = claudeRes.content[0]
     rawText = firstBlock.type === "text" ? firstBlock.text : ""
