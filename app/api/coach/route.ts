@@ -99,6 +99,150 @@ async function fetchGeminiSearch(query: string, geminiApiKey: string): Promise<s
   }
 }
 
+const cachedFetchYahooFinance = unstable_cache(
+  async (symbols: string[]) => fetchFuturesSnapshot(symbols),
+  ["yf-snapshot"],
+  { revalidate: 86400 }
+)
+
+const cachedFetchFRED = unstable_cache(
+  async (seriesId: string) => fetchFREDSeries(seriesId),
+  ["fred"],
+  { revalidate: 86400 }
+)
+
+const cachedFetchPolygon = unstable_cache(
+  async (symbol: string, apiKey: string) => fetchPolygonFutures(symbol, apiKey),
+  ["polygon"],
+  { revalidate: 86400 }
+)
+
+const localTools: Anthropic.Tool[] = [
+  {
+    name: "fetchYahooFinanceSnapshot",
+    description: "Fetch live futures price snapshot. Returns current price, change, and session range for ES, NQ, YM core futures plus any extra symbols passed. Use when the user asks about current prices, market conditions, or a specific symbol's intraday move.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        symbols: {
+          type: "array",
+          items: { type: "string" },
+          description: "Extra futures symbols to include beyond the default ES/NQ/YM core. Pass an empty array for the core snapshot only."
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: "fetchFREDSeries",
+    description: "Fetch the latest 3 observations for a FRED economic series. Use for macro context: DFF (Fed funds rate), CPIAUCSL (CPI), PAYEMS (nonfarm payrolls), UNRATE (unemployment), GDP, T10Y2Y (10Y-2Y yield curve), VIXCLS (VIX close).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        series_id: {
+          type: "string",
+          enum: ["DFF", "CPIAUCSL", "PAYEMS", "UNRATE", "GDP", "T10Y2Y", "VIXCLS"],
+          description: "FRED series ID. Must be one of the seven supported macro series."
+        }
+      },
+      required: ["series_id"]
+    }
+  },
+  {
+    name: "fetchPolygonFutures",
+    description: "Fetch CME futures historical bars (last ~10 daily OHLCV) for a specific contract. Only call when the user asks about a specific futures instrument by name — do not call speculatively.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        symbol: {
+          type: "string",
+          enum: ["ES", "NQ", "YM", "MES", "MNQ", "MYM"],
+          description: "CME futures root symbol. Returns the active front-month contract's last 10 daily bars."
+        }
+      },
+      required: ["symbol"]
+    }
+  },
+  {
+    name: "searchGemini",
+    description: "Perform a web search for current market news, strategy research, economic events, or trader-facing information. Generate the search query adaptively based on the user's question and trading context. Examples: 'latest CPI release reaction ES futures', 'FOMC meeting outcome September 2026', 'breakout pattern false signal recent research'.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "The search query to execute. Be specific — include date references and instrument names where relevant."
+        }
+      },
+      required: ["query"]
+    }
+  }
+]
+
+type ToolDeps = {
+  polygonApiKey?: string
+  geminiApiKey?: string
+  watchlist: string[]
+  polygonTier?: "full" | "forbidden" | "endpoint_unknown"
+}
+
+async function executeToolCall(
+  block: Anthropic.Beta.BetaToolUseBlock,
+  deps: ToolDeps
+): Promise<{ toolUseId: string; result: string }> {
+  const { name, id, input } = block
+  const inp = (input ?? {}) as Record<string, unknown>
+  try {
+    switch (name) {
+      case "fetchYahooFinanceSnapshot": {
+        const passed = Array.isArray(inp.symbols) ? (inp.symbols as string[]) : []
+        const symbols = passed.length > 0 ? passed : deps.watchlist
+        const result = await cachedFetchYahooFinance(symbols)
+        return { toolUseId: id, result: result || "[Yahoo Finance: no data available]" }
+      }
+      case "fetchFREDSeries": {
+        const seriesId = String(inp.series_id ?? "")
+        if (!["DFF", "CPIAUCSL", "PAYEMS", "UNRATE", "GDP", "T10Y2Y", "VIXCLS"].includes(seriesId)) {
+          return { toolUseId: id, result: `[FRED: invalid series_id '${seriesId}']` }
+        }
+        const result = await cachedFetchFRED(seriesId)
+        return { toolUseId: id, result }
+      }
+      case "fetchPolygonFutures": {
+        const symbol = String(inp.symbol ?? "")
+        if (!["ES", "NQ", "YM", "MES", "MNQ", "MYM"].includes(symbol)) {
+          return { toolUseId: id, result: `[Polygon: invalid symbol '${symbol}']` }
+        }
+        if (!deps.polygonApiKey) {
+          return { toolUseId: id, result: "[Polygon: no API key configured — set in Account tab]" }
+        }
+        // D-05: cache Polygon EOD when tier == "full". When tier == "forbidden", bypass cache so
+        // we don't waste cache slots on a constant string.
+        const result = deps.polygonTier === "forbidden"
+          ? await fetchPolygonFutures(symbol, deps.polygonApiKey)
+          : await cachedFetchPolygon(symbol, deps.polygonApiKey)
+        return { toolUseId: id, result }
+      }
+      case "searchGemini": {
+        const query = String(inp.query ?? "").trim()
+        if (!query) return { toolUseId: id, result: "[Gemini search: empty query]" }
+        if (!deps.geminiApiKey) {
+          return { toolUseId: id, result: "[Gemini search: no API key configured — set in Account tab]" }
+        }
+        const result = await fetchGeminiSearch(query, deps.geminiApiKey)
+        return { toolUseId: id, result }
+      }
+      default:
+        return { toolUseId: id, result: `[Unknown tool: ${name}]` }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Re-throw rate-limit and invalid-key sentinels for outer POST handler to surface
+    if (msg === "GEMINI_RATE_LIMIT" || msg === "GEMINI_INVALID_KEY") throw err
+    return { toolUseId: id, result: `[${name}: ${msg.slice(0, 80)}]` }
+  }
+}
+
 const lastCallTime = new Map<string, number>()
 const RATE_LIMIT_MS = 15_000
 
