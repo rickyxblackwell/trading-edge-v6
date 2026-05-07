@@ -721,27 +721,17 @@ function ChatView() {
             )}
           </div>
 
-          {/* Streak + watchlist row */}
-          {(streaks.currentWin > 0 || streaks.currentLoss > 0 || streaks.ruleAdherentDays > 0 || watchlist.length > 0) && (
+          {/* Streak row — win streak and rule-adherent days only */}
+          {(streaks.currentWin > 0 || streaks.ruleAdherentDays > 0) && (
             <div className="flex items-center gap-3 flex-wrap">
               {streaks.currentWin > 0 && (
                 <span className="label-upper" style={{ color: "var(--green)" }}>
                   <span className="mono">{streaks.currentWin}</span>-win streak
                 </span>
               )}
-              {streaks.currentLoss > 0 && (
-                <span className="label-upper" style={{ color: "var(--red)" }}>
-                  <span className="mono">{streaks.currentLoss}</span>-loss streak
-                </span>
-              )}
               {streaks.ruleAdherentDays > 0 && (
                 <span className="label-upper" style={{ color: "var(--text2)" }}>
                   Rule-adherent: <span className="mono">{streaks.ruleAdherentDays}</span>d
-                </span>
-              )}
-              {watchlist.length > 0 && (
-                <span className="label-upper" style={{ color: "var(--text3)" }}>
-                  Watching: {watchlist.join(", ")}
                 </span>
               )}
             </div>
