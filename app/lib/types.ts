@@ -101,7 +101,7 @@ export interface MonthlySummary {
   worstWeekOf: string
 }
 
-export type NotificationType = "revenge" | "overtrading" | "daily-soft" | "daily-hard" | "rate-limit" | "key-error"
+export type NotificationType = "revenge" | "overtrading" | "daily-soft" | "daily-hard" | "daily-goal" | "rate-limit" | "key-error"
 
 export interface AppNotification {
   id: string

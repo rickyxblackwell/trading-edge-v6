@@ -6,10 +6,10 @@ import { useNotifications } from "../lib/NotificationContext"
 import type { Trade } from "../lib/types"
 
 interface Alert {
-  type: "revenge" | "overtrading" | "daily-soft" | "daily-hard"
+  type: "revenge" | "overtrading" | "daily-soft" | "daily-hard" | "daily-goal"
   title: string
   message: string
-  severity: "warning" | "danger"
+  severity: "warning" | "danger" | "success"
   key: string
 }
 
@@ -42,6 +42,16 @@ function detectPnlAlert(trades: Trade[]): Alert | null {
       message: `Daily P&L: -$${Math.abs(todayPnl).toFixed(0)}. You've crossed your soft limit. Reduce size or stop — the hard limit is $${(1000 + todayPnl).toFixed(0)} away.`,
       severity: "warning",
       key: `daily-soft-${today}-${Math.floor(todayPnl / 50)}`,
+    }
+  }
+
+  if (todayPnl >= 1000) {
+    return {
+      type: "daily-goal",
+      title: "Daily Goal Hit",
+      message: `+$${todayPnl.toFixed(0)} today. You hit your number — the market will still be here tomorrow. Lock it in, close the platform, and go do something you actually enjoy. You earned it.`,
+      severity: "success",
+      key: `daily-goal-${today}`,
     }
   }
 
@@ -146,11 +156,12 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
 
   if (!alert) return null
 
-  const isDanger = alert.severity === "danger"
-  const color = isDanger ? "var(--red)" : "var(--yellow)"
-  const bg = isDanger ? "rgba(255,61,90,0.10)" : "rgba(255,208,96,0.08)"
-  const borderColor = isDanger ? "rgba(255,61,90,0.35)" : "rgba(255,208,96,0.35)"
-  const shadow = isDanger ? "rgba(255,61,90,0.18)" : "rgba(255,208,96,0.12)"
+  const { color, bg, borderColor, shadow } =
+    alert.severity === "danger"
+      ? { color: "var(--red)",    bg: "rgba(255,61,90,0.10)",   borderColor: "rgba(255,61,90,0.35)",   shadow: "rgba(255,61,90,0.18)" }
+      : alert.severity === "success"
+      ? { color: "var(--green)",  bg: "rgba(0,229,160,0.08)",   borderColor: "rgba(0,229,160,0.30)",   shadow: "rgba(0,229,160,0.12)" }
+      : { color: "var(--yellow)", bg: "rgba(255,208,96,0.08)",  borderColor: "rgba(255,208,96,0.35)",  shadow: "rgba(255,208,96,0.12)" }
 
   return (
     <div
