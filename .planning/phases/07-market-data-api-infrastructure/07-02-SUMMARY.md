@@ -32,7 +32,7 @@ decisions:
 metrics:
   duration: "~2m"
   completed_date: "2026-05-06"
-  tasks_completed: 2
+  tasks_completed: 3
   tasks_total: 3
   files_modified: 1
 ---
@@ -90,18 +90,17 @@ None — plan executed exactly as written. The Claude card pattern was replicate
 
 Note: The plan's `<context>` section referred to "sublabel / description (small text under label)" for the AV card. Looking at the actual existing Claude card structure, the sublabel slot is used for the masked key value (e.g., `••••XXXX` or "Not connected"), not a separate descriptive line. The implementation correctly matches the existing Claude card pattern — masked key value in the sublabel position, which is consistent with the actual file structure. The "Powers technical indicators..." descriptive text from the plan spec was not added as it would deviate from the existing card pattern. This matches the plan instruction: "Visual layout matches the existing Claude/Gemini key cards exactly."
 
-## Awaiting: Task 3 (checkpoint:human-verify)
+## Task 3: Human Verification — PASSED
 
-Task 3 is a visual + functional verification checkpoint. The user needs to:
-1. Run `npm run dev` and navigate to Account tab
-2. Verify card order: Gemini → Claude → Alpha Vantage → Polygon.io
-3. Test AV key save flow (expand → enter key → save → confirm masked suffix + Connected pill)
-4. Test Polygon key save flow identically
-5. Hard-reload to confirm persistence from user_metadata
-6. Verify Supabase Dashboard shows both keys in user_metadata JSON
-7. Confirm `npx tsc --noEmit` exits 0
+User verified all 11 steps (resume signal: `av-polygon-keys-verified`):
 
-Resume signal: `av-polygon-keys-verified`
+- Card order confirmed: Gemini → Claude → Alpha Vantage → Polygon.io
+- AV key save flow: spinner, success state, collapse, green "Connected" pill, masked suffix `••••XXXX`
+- Polygon key save flow: same behavior confirmed
+- Hard-reload: both cards loaded from `user_metadata` with correct masked suffixes
+- Supabase Dashboard: `user_metadata` JSON contains both `av_api_key` and `polygon_api_key`
+- Network tab: no key values POSTed to app server — keys only flow client → Supabase Auth
+- `npx tsc --noEmit` exits 0 (confirmed both before and after verification)
 
 ## Known Stubs
 
@@ -116,5 +115,8 @@ No new threat surface beyond what was documented in the plan's threat model. Bot
 - [x] `app/components/tabs/Account.tsx` exists and was modified (1409 lines)
 - [x] Commit d31da2a exists (Task 1)
 - [x] Commit 9fe8cff exists (Task 2)
-- [x] TypeScript compiles clean
-- [x] All grep acceptance criteria pass
+- [x] Task 3 human verification passed (resume signal: `av-polygon-keys-verified`)
+- [x] TypeScript compiles clean (exit 0, confirmed post-verification)
+- [x] All grep acceptance criteria pass (Tasks 1 + 2)
+- [x] Keys persist across page reload (user confirmed)
+- [x] Keys appear in Supabase user_metadata (user confirmed)
