@@ -957,15 +957,50 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
-    const isClaudeMode = typeof body?.mode === "string" && (body.mode === "analyze" || body.mode === "chat")
-    console.error(`[coach] ${isClaudeMode ? "Claude" : "Gemini"} error:`, message)
-    if (message.includes("API_KEY") || message.includes("401") || message.includes("403") || message.includes("authentication")) {
-      const provider = isClaudeMode ? "Claude" : "Gemini"
-      return NextResponse.json({ error: `Invalid ${provider} API key` }, { status: 401 })
+    console.error("[coach] error:", message)
+
+    if (message === "GEMINI_RATE_LIMIT" || message.includes("GEMINI_RATE_LIMIT")) {
+      return NextResponse.json(
+        { error: "Gemini search is rate-limited — queued for retry. Coach will respond once search completes.", type: "rate_limit", provider: "gemini" },
+        { status: 429 }
+      )
     }
-    if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED") || message.includes("quota")) {
-      return NextResponse.json({ error: "Quota exceeded — check your API plan limits" }, { status: 429 })
+    if (message === "GEMINI_INVALID_KEY" || message.includes("GEMINI_INVALID_KEY")) {
+      return NextResponse.json(
+        { error: "Invalid Gemini API key — check Account settings.", type: "key_error", provider: "gemini" },
+        { status: 401 }
+      )
     }
-    return NextResponse.json({ error: "Coach unavailable — try again" }, { status: 500 })
+
+    if (message.includes("rate_limit_error") || message.includes("rate-limit") ||
+        (message.includes("429") && !message.includes("Polygon") && !message.includes("FRED"))) {
+      return NextResponse.json(
+        { error: "Claude is at capacity — your request is queued and will resume shortly.", type: "rate_limit", provider: "claude" },
+        { status: 429 }
+      )
+    }
+
+    if (message.includes("invalid x-api-key") || message.includes("authentication_error") ||
+        (message.includes("401") && !message.includes("Polygon") && !message.includes("FRED"))) {
+      return NextResponse.json(
+        { error: "Invalid Claude API key — check Account settings.", type: "key_error", provider: "claude" },
+        { status: 401 }
+      )
+    }
+
+    if (message.includes("API_KEY") || message.includes("403") || message.includes("authentication")) {
+      return NextResponse.json(
+        { error: "Coach authentication failed — check API keys in Account settings.", type: "key_error" },
+        { status: 401 }
+      )
+    }
+    if (message.includes("RESOURCE_EXHAUSTED") || message.includes("quota")) {
+      return NextResponse.json(
+        { error: "Quota exceeded — check your API plan limits.", type: "rate_limit" },
+        { status: 429 }
+      )
+    }
+
+    return NextResponse.json({ error: "Coach unavailable — try again." }, { status: 500 })
   }
 }
