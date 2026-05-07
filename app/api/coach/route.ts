@@ -539,8 +539,6 @@ export async function POST(req: NextRequest) {
     }
     lastCallTime.set(sid, Date.now())
 
-    const useGeminiSearch = mode === "market-pulse" || mode === "strategy-review"
-
     // Claude key required for all modes
     if (!claudeApiKey || claudeApiKey.trim().length < 20) {
       return NextResponse.json(
@@ -562,11 +560,9 @@ export async function POST(req: NextRequest) {
     const extraStrategy = strategyText ? `\nTRADER'S PERSONAL NOTES:\n${strategyText}` : ""
     const patternContext = patternSummary ? `\nPATTERN HISTORY (compressed from past analyses):\n${patternSummary}` : ""
 
-    const watchlistSymbols = Array.isArray(watchlist) ? (watchlist as string[]) : []
-    const marketSnapshot = await fetchFuturesSnapshot(watchlistSymbols)
-    const marketSection = marketSnapshot ? `\n${marketSnapshot}\n` : ""
-    const watchlistSection = watchlistSymbols.length > 0
-      ? `WATCHLIST (user is tracking): ${watchlistSymbols.join(", ")}\n`
+    const watchlistArr = Array.isArray(watchlist) ? (watchlist as string[]) : []
+    const watchlistSection = watchlistArr.length > 0
+      ? `WATCHLIST (user is tracking): ${watchlistArr.join(", ")}\n`
       : ""
 
     const weaknessProfile = buildWeaknessProfile(incomingBehaviorLedger as unknown as Record<string, number> | undefined)
@@ -627,7 +623,7 @@ export async function POST(req: NextRequest) {
       : ""
 
     const claudeSystemContext = `${STRATEGY_SYSTEM}${extraStrategy}
-${marketSection}${watchlistSection}
+${watchlistSection}
 RECENT TRADES (newest first):
 ${tradesSummary}
 ${patternContext}
@@ -701,13 +697,13 @@ TITLE: <6-8 word summary of the key finding>
 PATTERN SUMMARY UPDATE: <100-word compressed pattern memory update>
 VIOLATIONS: <comma-separated list of violated categories, or "none"> — valid categories: lunchChop, overtrading, revengeTrade, noSetup, skippedBreak, positionSizing, dailyLimitBreached`
     } else if (mode === "market-pulse") {
-      const watchlistFocus = watchlistSymbols.length > 0
-        ? `## Watchlist (priority — use the Yahoo Finance price data already in context)
-${watchlistSymbols.map(s => `- **${s}**: price action, key S/R levels, anything notable today`).join("\n")}
+      const watchlistFocus = watchlistArr.length > 0
+        ? `## Watchlist (priority)
+${watchlistArr.map(s => `- **${s}**: price action, key S/R levels, anything notable today`).join("\n")}
 
 ## Broader Market`
         : `## Market`
-      userPrompt = `Using the live Yahoo Finance market data and web research already in your context, give me a trader-focused market pulse for my NYSE open session (09:30–11:30 ET). Use markdown formatting.
+      userPrompt = `Give me a trader-focused market pulse for my NYSE open session (09:30–11:30 ET). Use markdown formatting.
 
 ${watchlistFocus}
 - ES / NQ macro backdrop and intraday bias
@@ -717,8 +713,8 @@ ${watchlistFocus}
 
 Under 250 words. End with: TITLE: <6-8 word summary of the key market finding>`
     } else if (mode === "strategy-review") {
-      userPrompt = `Using the web research in your context (if available) plus my personal trade history and Yahoo Finance market data, critique my SMC/ICT S/R confluence system. Use markdown formatting. Cover:
-- How my actual trade patterns compare to current best practices (cite web research when available)
+      userPrompt = `Using my personal trade history, critique my SMC/ICT S/R confluence system. Use markdown formatting. Cover:
+- How my actual trade patterns align with best practices
 - Specific weaknesses in my confluence system (cite my actual trades)
 - Market conditions I'm adapting to vs where I'm lagging
 - One concrete improvement to implement this week
@@ -733,30 +729,7 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
     let rawText: string
     const anthropic = new Anthropic({ apiKey: claudeApiKey.trim() })
 
-    // Step 1 (market-pulse and strategy-review): Gemini fetches web research via Google Search
-    // Result is injected into Claude's system context. Failure = graceful degradation (empty string).
-    let webResearch = ""
-    if (useGeminiSearch && geminiApiKey) {
-      try {
-        const geminiAi = new GoogleGenAI({ apiKey: geminiApiKey.trim() })
-        const geminiQuery = mode === "market-pulse"
-          ? "Futures market news and key events today for ES NQ YM traders — under 150 words, key facts only"
-          : "Current best practices and pitfalls for SMC/ICT S/R confluence futures trading 2025 — under 150 words, actionable insights only"
-        const geminiRes = await geminiAi.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [{ text: geminiQuery }] }],
-          config: { tools: [{ googleSearch: {} }] },
-        })
-        webResearch = geminiRes.text?.trim() ?? ""
-      } catch {
-        webResearch = ""
-      }
-    }
-
-    // Build final Claude system context — inject web research when available
-    const finalSystemContext = webResearch
-      ? `${claudeSystemContext}\n\nWEB RESEARCH (live search results):\n${webResearch}`
-      : claudeSystemContext
+    const finalSystemContext = claudeSystemContext
 
     // Build conversation history — cap at last 18 messages (9 turns) for context window budget
     const priorMessages = Array.isArray(conversationHistory)
@@ -867,6 +840,38 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
         timestamp: new Date().toISOString(),
         mode: mode as SessionIndexEntry["mode"],
         momentumLabel: momentum === "positive" ? "↑ Positive" : momentum === "negative" ? "↓ Negative" : "→ Neutral",
+      }
+    }
+
+    // D-06: write memory updates server-side before sending response (prevents silent data loss on client network drop)
+    if (sessionIndexUpdate || behaviorLedgerUpdate || streaksUpdate || milestoneUpdate || weeklyUpdate || monthlyUpdate) {
+      const existingIndex = Array.isArray(incomingSessionIndex) ? incomingSessionIndex : []
+      const updatedIndex = sessionIndexUpdate
+        ? [sessionIndexUpdate, ...existingIndex].slice(0, 60)
+        : existingIndex
+      const existingLedger = (incomingBehaviorLedger ?? {}) as BehaviorLedger
+      const updatedLedger = behaviorLedgerUpdate
+        ? Object.fromEntries(
+            Object.entries({ ...existingLedger, ...behaviorLedgerUpdate }).map(
+              ([k, v]) => [k, (existingLedger[k as keyof BehaviorLedger] ?? 0) + (v ?? 0)]
+            )
+          ) as unknown as BehaviorLedger
+        : existingLedger
+      const { error: writeError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+        user_metadata: {
+          ...user.user_metadata,
+          session_index: updatedIndex,
+          behavior_ledger: updatedLedger,
+          streaks: streaksUpdate ?? user.user_metadata?.streaks,
+          milestone_log: milestoneUpdate
+            ? { ...(user.user_metadata?.milestone_log ?? {}), ...milestoneUpdate }
+            : user.user_metadata?.milestone_log,
+          weekly_summaries: weeklyUpdate ?? user.user_metadata?.weekly_summaries,
+          monthly_summaries: monthlyUpdate ?? user.user_metadata?.monthly_summaries,
+        },
+      })
+      if (writeError) {
+        return NextResponse.json({ error: "Memory write failed" }, { status: 500 })
       }
     }
 
