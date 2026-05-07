@@ -47,7 +47,7 @@ function Calendar({
     setMonth(d.getMonth())
   }
 
-  const todayStr = now.toISOString().slice(0, 10)
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`
   const blanks = Array(firstDow).fill(null)
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
@@ -155,12 +155,13 @@ function PeriodSummary({ trades, mode }: { trades: Trade[]; mode: "weekly" | "mo
   const grouped = useMemo(() => {
     const m: Record<string, Trade[]> = {}
     trades.forEach(t => {
-      const d = new Date(t.date)
+      const [dy, dm, dd] = t.date.split("-").map(Number)
+      const d = new Date(dy, dm - 1, dd) // local date — avoids UTC midnight shift
       let key: string
       if (mode === "weekly") {
         const mon = new Date(d)
         mon.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-        key = mon.toISOString().slice(0, 10)
+        key = `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,"0")}-${String(mon.getDate()).padStart(2,"0")}`
       } else {
         key = t.date.slice(0, 7)
       }
