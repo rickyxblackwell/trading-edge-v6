@@ -18,7 +18,6 @@ function localToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-// Runs on every trade change — P&L limit alerts only (immediate feedback)
 function detectPnlAlert(trades: Trade[]): Alert | null {
   const today = localToday()
   const todayTrades = trades.filter(t => t.date === today)
@@ -49,7 +48,6 @@ function detectPnlAlert(trades: Trade[]): Alert | null {
   return null
 }
 
-// Runs on modal open only — interrupts revenge trading and overtrading patterns
 function detectModalAlert(trades: Trade[]): Alert | null {
   const now = Date.now()
   const today = localToday()
@@ -64,7 +62,6 @@ function detectModalAlert(trades: Trade[]): Alert | null {
   const lastTs = new Date(`${last.date}T${last.time}:00`).getTime()
   const minAgo = (now - lastTs) / 60000
 
-  // Only fire if the trade actually happened in the past 30 minutes
   if (minAgo < 0 || minAgo > 30) return null
 
   if (last.outcome === "loss") {
@@ -93,37 +90,58 @@ function detectModalAlert(trades: Trade[]): Alert | null {
 export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean }) {
   const { trades } = useTrades()
   const { addNotification } = useNotifications()
-  const [alert, setAlert] = useState<Alert | null>(null)
+  const [queue, setQueue] = useState<Alert[]>([])
   const dismissedKeys = useRef(new Set<string>())
   const notifiedKeys = useRef(new Set<string>())
+  // Mirror trades in a ref so modal-open effect always reads fresh data (avoids stale closure)
+  const tradesRef = useRef(trades)
+  useEffect(() => { tradesRef.current = trades }, [trades])
 
-  // P&L limit alerts fire immediately when trades update (no modal needed)
+  const alert = queue[0] ?? null
+
+  function enqueue(alerts: Alert[]) {
+    const fresh = alerts.filter(a => !dismissedKeys.current.has(a.key))
+    if (fresh.length === 0) return
+    fresh.forEach(a => {
+      if (!notifiedKeys.current.has(a.key)) {
+        addNotification({ type: a.type, title: a.title, message: a.message })
+        notifiedKeys.current.add(a.key)
+      }
+    })
+    setQueue(prev => {
+      const existingKeys = new Set(prev.map(a => a.key))
+      const toAdd = fresh.filter(a => !existingKeys.has(a.key))
+      return toAdd.length > 0 ? [...prev, ...toAdd] : prev
+    })
+  }
+
+  function dismiss() {
+    if (!alert) return
+    dismissedKeys.current.add(alert.key)
+    setQueue(q => q.slice(1))
+  }
+
+  // P&L limit alerts fire immediately when trades update — no modal needed
   useEffect(() => {
     const detected = detectPnlAlert(trades)
-    if (detected && !dismissedKeys.current.has(detected.key)) {
-      setAlert(detected)
-      if (!notifiedKeys.current.has(detected.key)) {
-        addNotification({ type: detected.type, title: detected.title, message: detected.message })
-        notifiedKeys.current.add(detected.key)
-      }
-    } else if (!detected && (alert?.type === "daily-soft" || alert?.type === "daily-hard")) {
-      setAlert(null)
+    if (detected) {
+      enqueue([detected])
+    } else {
+      // Clear stale P&L alerts from queue when P&L recovers
+      setQueue(q => q.filter(a => a.type !== "daily-soft" && a.type !== "daily-hard"))
     }
   }, [trades]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Revenge/overtrading alerts fire only when the trade entry modal opens
+  // When modal opens: collect BOTH revenge/overtrading AND P&L — show all, one after the other
   useEffect(() => {
     if (!tradeModalOpen) return
-    const detected = detectModalAlert(trades) ?? detectPnlAlert(trades)
-    if (detected && !dismissedKeys.current.has(detected.key)) {
-      setAlert(detected)
-      if (!notifiedKeys.current.has(detected.key)) {
-        addNotification({ type: detected.type, title: detected.title, message: detected.message })
-        notifiedKeys.current.add(detected.key)
-      }
-    } else if (!detected) {
-      setAlert(null)
-    }
+    const currentTrades = tradesRef.current
+    const modalAlert = detectModalAlert(currentTrades)
+    const pnlAlert = detectPnlAlert(currentTrades)
+    const candidates: Alert[] = []
+    if (modalAlert) candidates.push(modalAlert)
+    if (pnlAlert) candidates.push(pnlAlert)
+    if (candidates.length > 0) enqueue(candidates)
   }, [tradeModalOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!alert) return null
@@ -150,10 +168,7 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
         backdropFilter: "blur(4px)",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          dismissedKeys.current.add(alert.key)
-          setAlert(null)
-        }
+        if (e.target === e.currentTarget) dismiss()
       }}
     >
       <div
@@ -191,6 +206,11 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
           <p className="mono" style={{ fontSize: 13, fontWeight: 700, color, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             {alert.title}
           </p>
+          {queue.length > 1 && (
+            <span className="mono" style={{ marginLeft: "auto", fontSize: 10, color, opacity: 0.6 }}>
+              {queue.length - 1} more
+            </span>
+          )}
         </div>
 
         <p style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.7, marginBottom: 16 }}>
@@ -198,10 +218,7 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
         </p>
 
         <button
-          onClick={() => {
-            dismissedKeys.current.add(alert.key)
-            setAlert(null)
-          }}
+          onClick={dismiss}
           className="mono"
           style={{
             width: "100%",
@@ -220,7 +237,7 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
           onMouseEnter={e => (e.currentTarget.style.background = `${color}22`)}
           onMouseLeave={e => (e.currentTarget.style.background = `${color}14`)}
         >
-          Acknowledged
+          {queue.length > 1 ? "Acknowledged — Next" : "Acknowledged"}
         </button>
       </div>
     </div>
