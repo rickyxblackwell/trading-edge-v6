@@ -186,9 +186,8 @@ export function TradesProvider({ children }: { children: React.ReactNode }) {
     if (hydrated) localStorage.setItem(TRADES_KEY, JSON.stringify(trades))
   }, [trades, hydrated])
 
-  // Persist coaching to localStorage (cap at 30 — known bug, fixed in Phase 3 STABLE-02; preserve current behavior here)
   useEffect(() => {
-    if (hydrated) localStorage.setItem(COACHING_KEY, JSON.stringify(coachingHistory.slice(-30)))
+    if (hydrated) localStorage.setItem(COACHING_KEY, JSON.stringify(coachingHistory.slice(-60)))
   }, [coachingHistory, hydrated])
 
   // Persist pattern summary

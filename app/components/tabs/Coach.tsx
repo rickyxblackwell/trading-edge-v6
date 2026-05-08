@@ -43,13 +43,13 @@ function parseWatchlistIntent(text: string): { add: string[]; remove: string[] }
 }
 
 function genId() {
-  return Math.random().toString(36).slice(2, 9)
+  return crypto.randomUUID()
 }
 
 function genSessionId() {
   if (typeof window === "undefined") return "ssr"
   let sid = sessionStorage.getItem("edge_session_id")
-  if (!sid) { sid = Math.random().toString(36).slice(2); sessionStorage.setItem("edge_session_id", sid) }
+  if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("edge_session_id", sid) }
   return sid
 }
 
@@ -58,17 +58,17 @@ const MODES = [
   {
     id: "analyze" as const,
     label: "Analyze Journal",
-    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><path d="M2 20h20" /></svg>,
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><path d="M2 20h20" /></svg>,
   },
   {
     id: "market-pulse" as const,
     label: "Market Pulse",
-    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="2 12 6 12 8 5 11 19 14 9 16 14 18 12 22 12" /></svg>,
   },
   {
     id: "strategy-review" as const,
     label: "Strategy Review",
-    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
   },
 ]
 
@@ -80,9 +80,10 @@ const MODE_LABELS: Record<string, string> = {
 }
 
 const MOMENTUM_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  positive: { label: "↑ Positive", color: "var(--green)", bg: "rgba(0,229,160,0.1)" },
-  neutral:  { label: "→ Neutral",  color: "var(--yellow)", bg: "rgba(255,208,96,0.1)" },
-  negative: { label: "↓ Negative", color: "var(--red)",  bg: "rgba(255,61,90,0.1)" },
+  positive: { label: "↑ Positive", color: "var(--green)",  bg: "rgba(0,229,160,0.1)"   },
+  neutral:  { label: "→ Neutral",  color: "var(--yellow)", bg: "rgba(255,208,96,0.1)"  },
+  negative: { label: "↓ Negative", color: "var(--red)",    bg: "rgba(255,61,90,0.1)"   },
+  info:     { label: "Info",       color: "var(--accent)", bg: "rgba(56,189,248,0.1)"  },
 }
 
 /* ─── Helpers ────────────────────────────────────────────────── */
@@ -166,7 +167,9 @@ function ThinkingBubble() {
 /* ─── History entry card ─────────────────────────────────────── */
 function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: () => void }) {
   const [expanded, setExpanded] = useState(false)
-  const mom = MOMENTUM_MAP[entry.momentum] ?? MOMENTUM_MAP.neutral
+  const isInfo = entry.mode === "market-pulse" || isWatchlistSession(entry)
+  const momKey = isInfo ? "info" : (entry.momentum ?? "neutral")
+  const mom = MOMENTUM_MAP[momKey] ?? MOMENTUM_MAP.neutral
   const modeLabel = MODE_LABELS[entry.mode] ?? "Session"
 
   return (
@@ -187,12 +190,6 @@ function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: ()
             <span className="label-upper" style={{ color: "var(--text3)" }}>{modeLabel}</span>
             <span className="label-upper" style={{ color: "var(--text3)" }}>·</span>
             <span className="label-upper" style={{ color: "var(--text3)" }}>{relativeTime(entry.timestamp)}</span>
-            {entry.tradeCount > 0 && (
-              <>
-                <span className="label-upper" style={{ color: "var(--text3)" }}>·</span>
-                <span className="label-upper" style={{ color: "var(--text3)" }}>{entry.tradeCount} trades</span>
-              </>
-            )}
           </div>
         </div>
 
@@ -233,22 +230,66 @@ function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: ()
 function isWatchlistSession(entry: CoachingEntry): boolean {
   const t = (entry.title || "").toLowerCase()
   const c = (entry.fullContent || entry.priority || "").toLowerCase()
-  // Any title mentioning "watchlist" is a management session — real analysis titles never contain it
   return (
     /\bwatchlist\b/.test(t) ||
     (/acknowledged/.test(c) && /watchlist/.test(c))
   )
 }
 
+/* ─── Chat/History tab toggle ────────────────────────────────── */
+function CoachTabToggle({
+  activeView,
+  setActiveView,
+}: {
+  activeView: "chat" | "history"
+  setActiveView: (v: "chat" | "history") => void
+}) {
+  return (
+    <div className="flex justify-center mb-3">
+      <div
+        className="relative flex rounded-xl overflow-hidden"
+        style={{ border: "1px solid var(--border)" }}
+      >
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 w-1/2 pointer-events-none"
+          style={{
+            background: "var(--accent3)",
+            border: "1px solid var(--border-accent)",
+            borderRadius: "inherit",
+            transform: activeView === "chat" ? "translateX(0%)" : "translateX(100%)",
+            transition: "transform 0.2s ease",
+          }}
+        />
+        <button
+          onClick={() => setActiveView("chat")}
+          className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
+          style={{ color: activeView === "chat" ? "var(--accent)" : "var(--text3)", transition: "color 0.2s ease" }}
+        >
+          Chat
+        </button>
+        <button
+          onClick={() => setActiveView("history")}
+          className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[80px]"
+          style={{ color: activeView === "history" ? "var(--accent)" : "var(--text3)", transition: "color 0.2s ease" }}
+        >
+          History
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /* ─── History tab view ───────────────────────────────────────── */
-function HistoryView() {
+function HistoryView({ activeView, setActiveView }: { activeView: "chat" | "history"; setActiveView: (v: "chat" | "history") => void }) {
   const { isAuthenticated } = useAuthContext()
   const { coachingHistory, updateCoachingEntry } = useTrades()
   const [showArchived, setShowArchived] = useState(false)
 
   if (!isAuthenticated) {
     return (
-      <div className="p-4">
+      <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: "contain" }}>
+        <CoachTabToggle activeView={activeView} setActiveView={setActiveView} />
         <div className="glass rounded-2xl p-8 flex flex-col items-center justify-center gap-3 text-center">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -270,7 +311,7 @@ function HistoryView() {
     )
   }
 
-  const sorted = [...coachingHistory].reverse().filter(e => !isWatchlistSession(e))
+  const sorted = [...coachingHistory].reverse()
   const active = sorted.filter(e => !e.archived)
   const archived = sorted.filter(e => e.archived)
 
@@ -285,7 +326,8 @@ function HistoryView() {
 
   if (coachingHistory.length === 0) {
     return (
-      <div className="p-4">
+      <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: "contain" }}>
+        <CoachTabToggle activeView={activeView} setActiveView={setActiveView} />
         <div className="glass rounded-2xl p-8 flex flex-col items-center justify-center gap-3 text-center">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
@@ -298,7 +340,8 @@ function HistoryView() {
   }
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ overscrollBehavior: "contain" }}>
+      <CoachTabToggle activeView={activeView} setActiveView={setActiveView} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <p className="label-upper">{active.length} sessions</p>
@@ -354,9 +397,9 @@ function HistoryView() {
 }
 
 /* ─── Chat tab view ──────────────────────────────────────────── */
-function ChatView() {
+function ChatView({ activeView, setActiveView }: { activeView: "chat" | "history"; setActiveView: (v: "chat" | "history") => void }) {
   const {
-    trades, coachingHistory, addCoachingEntry,
+    trades, coachingHistory, addCoachingEntry, updateCoachingEntry,
     patternSummary, updatePatternSummary,
     watchlist, updateWatchlist,
     sessionIndex, updateSessionIndex,
@@ -385,6 +428,7 @@ function ChatView() {
   const tradesRef = useRef(trades)
   const lastTitleRef = useRef("")
   const sessionModeRef = useRef<string>("chat")
+  const chatSessionIdRef = useRef<string | null>(null)
 
   useEffect(() => { messagesRef.current = messages }, [messages])
   useEffect(() => { tradesRef.current = trades }, [trades])
@@ -441,37 +485,11 @@ function ChatView() {
     }
   }, [])
 
-  const saveSession = () => {
-    const msgs = messagesRef.current
-    if (msgs.length === 0) return
-    const assistantMsgs = msgs.filter(m => m.role === "assistant")
-    if (assistantMsgs.length === 0) return
-
-    const title =
-      lastTitleRef.current ||
-      msgs.find(m => m.role === "user")?.content.slice(0, 60) ||
-      "Chat session"
-
-    const entry: CoachingEntry = {
-      id: genId(),
-      timestamp: new Date().toISOString(),
-      tradeCount: tradesRef.current.length,
-      title,
-      fullContent: assistantMsgs[assistantMsgs.length - 1].content,
-      archived: false,
-      mode: (sessionModeRef.current || "chat") as CoachingEntry["mode"],
-      marketSnapshot: "",
-      patterns: "",
-      process: "",
-      risk: "",
-      priority: assistantMsgs[assistantMsgs.length - 1].content.slice(0, 150),
-      momentum: "neutral",
-    }
-
-    addCoachingEntry(entry)
+  const startNewChat = () => {
     messagesRef.current = []
     lastTitleRef.current = ""
     sessionModeRef.current = "chat"
+    chatSessionIdRef.current = null
     setMessages([])
     setShowOnboarding(true)
   }
@@ -591,6 +609,39 @@ function ChatView() {
         updateWatchlist(data.watchlistAdd || [], data.watchlistRemove || [])
       }
 
+      // Auto-save all modes — chat upserts to avoid duplicate entries per turn
+      const title = data.sessionTitle || lastTitleRef.current || text.slice(0, 60) || "Coaching session"
+      const isWatchlist = clientIntent.add.length > 0 || clientIntent.remove.length > 0
+      const momentum = isWatchlist
+        ? "info"
+        : ((data.momentum as string | undefined) || (data.coaching as { momentum?: string } | undefined)?.momentum || "neutral")
+      if (mode === "chat" && chatSessionIdRef.current) {
+        updateCoachingEntry(chatSessionIdRef.current, {
+          title,
+          fullContent: data.reply,
+          priority: (data.reply as string).slice(0, 150),
+          momentum,
+        })
+      } else {
+        const id = genId()
+        if (mode === "chat") chatSessionIdRef.current = id
+        addCoachingEntry({
+          id,
+          timestamp: new Date().toISOString(),
+          tradeCount: tradesRef.current.length,
+          title,
+          fullContent: data.reply,
+          archived: false,
+          mode: mode as CoachingEntry["mode"],
+          marketSnapshot: "",
+          patterns: "",
+          process: "",
+          risk: "",
+          priority: (data.reply as string).slice(0, 150),
+          momentum,
+        })
+      }
+
     } catch {
       setError("Coach unavailable — try again.")
     } finally {
@@ -688,18 +739,16 @@ function ChatView() {
       </div>
     )}
 
-    <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 130px)" }}>
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-4 pb-2">
+    <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
+        <div className="p-4 space-y-4 pb-2" style={{ marginTop: 48 }}>
+          <CoachTabToggle activeView={activeView} setActiveView={setActiveView} />
 
-          {/* Memory status + Save & New Chat */}
-          <div className="flex items-center justify-between flex-wrap gap-1">
-            <p className="label-upper" style={{ color: "var(--text3)" }}>
-              {patternSummary ? `Memory active · ${coachingHistory.length} sessions` : "Memory building…"}
-            </p>
+          {/* New Chat button */}
+          <div className="flex items-center justify-end flex-wrap gap-1">
             {messages.length > 0 && !loading && (
               <button
-                onClick={saveSession}
+                onClick={startNewChat}
                 className="mono text-xs px-3 py-1.5 rounded-lg"
                 style={{
                   color: "var(--text3)",
@@ -716,7 +765,7 @@ function ChatView() {
                   e.currentTarget.style.borderColor = "var(--border)"
                 }}
               >
-                Save &amp; New Chat
+                New Chat
               </button>
             )}
           </div>
@@ -738,11 +787,11 @@ function ChatView() {
           )}
 
           {/* Mode chips */}
-          <div className="flex flex-wrap gap-2 justify-center">
+          <div className="grid grid-cols-3 gap-2">
             {MODES.map(mode => (
               <button key={mode.id} onClick={() => handleModeClick(mode.id)} disabled={loading}
-                className="flex items-center gap-1.5 mono text-xs px-3 py-2 rounded-xl transition-all duration-150 disabled:opacity-40"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", color: "var(--text2)" }}
+                className="flex flex-col items-center gap-1 mono px-2 py-2.5 rounded-xl transition-all duration-150 disabled:opacity-40"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 10, lineHeight: 1.3 }}
                 onMouseEnter={e => { const el = e.currentTarget; el.style.background = "var(--accent3)"; el.style.borderColor = "var(--border-accent)"; el.style.color = "var(--accent)" }}
                 onMouseLeave={e => { const el = e.currentTarget; el.style.background = "rgba(255,255,255,0.04)"; el.style.borderColor = "var(--border)"; el.style.color = "var(--text2)" }}>
                 {mode.icon}
@@ -762,30 +811,45 @@ function ChatView() {
           {showOnboarding && messages.length === 0 && (
             <div className="glass rounded-2xl overflow-hidden" style={{ width: "100%" }}>
 
-              {/* Header */}
-              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
-                <p className="text-sm font-semibold" style={{ color: "var(--text)", marginBottom: 2 }}>
+              {/* Hero */}
+              <div className="flex flex-col items-center text-center px-6 pt-6 pb-5">
+                <div style={{
+                  width: 56, height: 56, borderRadius: 18,
+                  background: "rgba(168,85,247,0.12)",
+                  border: "1px solid rgba(168,85,247,0.28)",
+                  boxShadow: "0 0 24px rgba(168,85,247,0.18)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  marginBottom: 14,
+                }}>
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+                    <path d="M20 3v4M22 5h-4M4 17v2M5 18H3" />
+                  </svg>
+                </div>
+                <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 6, lineHeight: 1.3 }}>
                   Your AI Trading Coach
                 </p>
-                <p className="label-upper" style={{ color: "var(--text3)" }}>
+                <p style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.65, maxWidth: 260 }}>
                   Tap a mode above or start typing to begin
                 </p>
               </div>
 
-              {/* Tab bar */}
-              <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
+              {/* Pill tab bar */}
+              <div className="flex gap-1.5 px-4 pb-3">
                 {(["commands", "memory", "stack"] as const).map(tab => {
-                  const labels = { commands: "Commands", memory: "Memory", stack: "AI Stack" }
-                  const colors = { commands: "var(--accent)", memory: "var(--purple)", stack: "var(--green)" }
-                  const active = infoTab === tab
+                  const labels  = { commands: "Commands", memory: "Memory", stack: "AI Stack" }
+                  const colors  = { commands: "var(--accent)", memory: "var(--purple)", stack: "var(--green)" }
+                  const bgs     = { commands: "rgba(56,189,248,0.10)", memory: "rgba(168,85,247,0.10)", stack: "rgba(0,229,160,0.10)" }
+                  const borders = { commands: "rgba(56,189,248,0.28)", memory: "rgba(168,85,247,0.28)", stack: "rgba(0,229,160,0.28)" }
+                  const active  = infoTab === tab
                   return (
                     <button key={tab} onClick={() => setInfoTab(tab)}
-                      className="flex-1 mono text-xs py-2.5"
+                      className="flex-1 mono text-xs py-2 rounded-xl transition-all"
                       style={{
-                        color: active ? colors[tab] : "var(--text3)",
-                        borderBottom: active ? `2px solid ${colors[tab]}` : "2px solid transparent",
-                        background: "transparent",
-                        transition: "color 0.15s ease",
+                        color:      active ? colors[tab]  : "var(--text3)",
+                        background: active ? bgs[tab]     : "rgba(255,255,255,0.03)",
+                        border:     `1px solid ${active ? borders[tab] : "var(--border)"}`,
+                        fontWeight: active ? 600 : 400,
                       }}>
                       {labels[tab]}
                     </button>
@@ -793,22 +857,28 @@ function ChatView() {
                 })}
               </div>
 
+              {/* Divider */}
+              <div style={{ height: 1, background: "var(--border)", marginBottom: 16 }} />
+
               {/* Tab content */}
-              <div className="p-3">
+              <div className="px-4 pb-1">
 
                 {infoTab === "commands" && (
-                  <div className="space-y-1">
+                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "7px 10px", alignItems: "center" }}>
                     {[
-                      ["Analyze Journal", "deep review of trades vs. your strategy rules"],
-                      ["Market Pulse", "live macro + instrument data for your watchlist"],
-                      ["Strategy Review", "critiques your SMC/ICT approach with live research"],
-                      ["watch TICKER", "add an instrument to your watchlist"],
-                      ["unwatch TICKER", "remove an instrument from your watchlist"],
-                      ["ask anything", "trade recaps, R-mult, pattern checks, rule questions"],
+                      ["Analyze Journal",  "Deep review of trades vs. your strategy rules"],
+                      ["Market Pulse",     "Live macro + instrument data for your watchlist"],
+                      ["Strategy Review",  "Critiques your SMC/ICT approach with live research"],
+                      ["watch TICKER",     "Add an instrument to your watchlist"],
+                      ["unwatch TICKER",   "Remove an instrument from your watchlist"],
+                      ["ask anything",     "Trade recaps, R-mult, pattern checks, rule questions"],
                     ].map(([cmd, desc]) => (
-                      <div key={cmd} className="flex gap-2 text-xs items-baseline" style={{ lineHeight: 1.75 }}>
-                        <span className="mono flex-shrink-0" style={{ color: "var(--accent)", width: 120 }}>{cmd}</span>
-                        <span style={{ color: "var(--text2)" }}>{desc}</span>
+                      <div key={cmd} style={{ display: "contents" }}>
+                        <span className="mono text-xs px-2 py-0.5 rounded-md"
+                          style={{ background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.20)", color: "var(--accent)", justifySelf: "start" }}>
+                          {cmd}
+                        </span>
+                        <span style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.55 }}>{desc}</span>
                       </div>
                     ))}
                   </div>
@@ -820,37 +890,41 @@ function ChatView() {
                       {
                         label: "Always On",
                         color: "var(--purple)",
-                        bg: "rgba(168,85,247,0.06)",
+                        bg: "rgba(168,85,247,0.07)",
+                        border: "rgba(168,85,247,0.22)",
                         items: [
-                          "Pattern summary — updated every Analyze session",
-                          "Session index — full title history recalled on demand",
-                          "Behavior ledger — recurring strengths & weaknesses",
-                          "Milestones · streaks · weekly & monthly summaries",
+                          "Pattern summary — updated every Analyze run",
+                          "Past session titles injected into every request",
+                          "Weakness profile — built from your trade history",
+                          "Streaks · milestones · weekly & monthly summaries",
                         ],
                       },
                       {
                         label: "This Session",
                         color: "var(--accent)",
-                        bg: "rgba(56,189,248,0.06)",
+                        bg: "rgba(56,189,248,0.07)",
+                        border: "rgba(56,189,248,0.22)",
                         items: [
-                          "Full conversation thread stays in context",
-                          "Claude remembers what it said 3 turns ago",
+                          "Full conversation thread kept in context",
+                          "Coach remembers everything said this session",
                         ],
                       },
                       {
                         label: "On-Demand",
                         color: "var(--green)",
-                        bg: "rgba(0,229,160,0.06)",
+                        bg: "rgba(0,229,160,0.07)",
+                        border: "rgba(0,229,160,0.22)",
                         items: [
                           "Market data fetched when your question warrants it",
-                          "News, indicators, macro — Claude decides what to pull",
+                          "News, macro, futures — coach decides what to pull",
                         ],
                       },
                     ].map(tier => (
-                      <div key={tier.label} className="rounded-xl p-2.5" style={{ background: tier.bg, border: `1px solid ${tier.color}25`, borderLeft: `3px solid ${tier.color}` }}>
-                        <p className="label-upper mb-1" style={{ color: tier.color }}>{tier.label}</p>
+                      <div key={tier.label} className="rounded-xl p-3"
+                        style={{ background: tier.bg, border: `1px solid ${tier.border}`, borderLeft: `3px solid ${tier.color}` }}>
+                        <p className="label-upper mb-1.5" style={{ color: tier.color }}>{tier.label}</p>
                         {tier.items.map(item => (
-                          <p key={item} className="text-xs" style={{ color: "var(--text2)", lineHeight: 1.7 }}>· {item}</p>
+                          <p key={item} style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.7 }}>· {item}</p>
                         ))}
                       </div>
                     ))}
@@ -858,19 +932,22 @@ function ChatView() {
                 )}
 
                 {infoTab === "stack" && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {[
-                      { name: "Claude Sonnet", role: "coaching & reasoning — all 4 modes", color: "var(--purple)" },
-                      { name: "Gemini Flash", role: "live web search — news & strategy research", color: "var(--accent)" },
-                      { name: "Yahoo Finance", role: "real-time futures snapshot", color: "var(--green)" },
-                      { name: "Alpha Vantage", role: "RSI · MACD · VWAP · news sentiment · earnings", color: "var(--yellow)" },
-                      { name: "FRED API", role: "Fed funds · CPI · NFP · GDP · yield curve", color: "var(--text2)" },
-                      { name: "Polygon.io", role: "CME futures — ES · NQ · MES · MNQ · YM · MYM", color: "var(--text2)" },
-                    ].map(({ name, role, color }) => (
-                      <div key={name} className="flex gap-2 items-start text-xs" style={{ lineHeight: 1.65 }}>
-                        <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full" style={{ background: color }} />
-                        <span className="mono flex-shrink-0" style={{ color, minWidth: 112 }}>{name}</span>
-                        <span style={{ color: "var(--text3)" }}>{role}</span>
+                      { name: "Claude Sonnet", role: "Coaching & reasoning — all 4 modes",              color: "var(--purple)", dot: "rgba(168,85,247,0.9)" },
+                      { name: "Gemini Flash",  role: "Tool call · web search for news & strategy",    color: "var(--accent)", dot: "rgba(56,189,248,0.9)"  },
+                      { name: "Yahoo Finance", role: "Tool call · futures price snapshot (~15 min)",   color: "var(--green)",  dot: "rgba(0,229,160,0.9)"   },
+                      { name: "Alpha Vantage", role: "Tool call · RSI · MACD · news sentiment",        color: "var(--yellow)", dot: "rgba(255,208,96,0.9)"  },
+                      { name: "Polygon.io",    role: "Tool call · CME futures OHLCV bars",             color: "var(--text2)",  dot: "rgba(122,135,168,0.7)" },
+                      { name: "FRED API",      role: "Tool call · Fed funds · CPI · GDP · yields",    color: "var(--text2)",  dot: "rgba(122,135,168,0.7)" },
+                    ].map(({ name, role, color, dot }) => (
+                      <div key={name} className="flex items-start gap-3 rounded-xl p-2.5"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0, marginTop: 3, boxShadow: `0 0 6px ${dot}` }} />
+                        <div>
+                          <p className="mono" style={{ fontSize: 12, fontWeight: 600, color, marginBottom: 2 }}>{name}</p>
+                          <p style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.5 }}>{role}</p>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -879,26 +956,20 @@ function ChatView() {
               </div>
 
               {/* Dismiss */}
-              <div className="px-3 pb-3">
+              <div className="p-4">
                 <button
                   onClick={() => setShowOnboarding(false)}
                   style={{
-                    width: "100%",
-                    height: 44,
-                    borderRadius: 12,
+                    width: "100%", height: 44, borderRadius: 12,
                     background: "var(--accent3)",
                     border: "1px solid var(--border-accent)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: "var(--accent)",
-                    transition: "background 0.2s ease",
+                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 13, fontWeight: 600, color: "var(--accent)",
+                    letterSpacing: "0.02em",
+                    transition: "background 0.15s ease",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(56,189,248,0.14)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "var(--accent3)")}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(56,189,248,0.14)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "var(--accent3)")}
                 >
                   Got it →
                 </button>
@@ -915,9 +986,9 @@ function ChatView() {
         </div>
       </div>
 
-      {/* Input */}
-      <div className="flex-shrink-0 px-4 pb-4 pt-3" style={{ background: "rgba(6,11,20,0.8)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--border)" }}>
-        <div className="flex items-end gap-2 rounded-2xl px-3 py-2" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)" }}>
+      {/* Input — pinned to bottom of flex column */}
+      <div className="flex-shrink-0 px-3 pb-4 pt-2">
+        <div className="flex items-end gap-2.5 rounded-3xl px-4 py-3" style={{ background: "var(--bg3)", border: "1px solid var(--border-accent)", boxShadow: "0 0 0 1px rgba(56,189,248,0.08), 0 0 18px rgba(56,189,248,0.12)" }}>
           <textarea
             ref={textRef}
             value={input}
@@ -926,20 +997,17 @@ function ChatView() {
             placeholder={loading ? "Coach is thinking…" : "ask me anything..."}
             disabled={loading}
             rows={1}
-            className="flex-1 resize-none outline-none text-sm mono bg-transparent"
+            className="flex-1 resize-none outline-none text-sm mono bg-transparent coach-input"
             style={{ color: "var(--text)", lineHeight: 1.5, maxHeight: 120, minHeight: 24 }}
           />
           <button onClick={() => sendMessage()} disabled={!input.trim() || loading}
-            className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 disabled:opacity-30"
-            style={{ background: input.trim() && !loading ? "var(--accent)" : "rgba(255,255,255,0.06)", border: `1px solid ${input.trim() && !loading ? "var(--accent)" : "var(--border)"}` }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={input.trim() && !loading ? "var(--bg)" : "var(--text3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 disabled:opacity-30"
+            style={{ background: input.trim() && !loading ? "var(--accent)" : "var(--bg2)", border: `1px solid ${input.trim() && !loading ? "var(--accent)" : "var(--border)"}` }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={input.trim() && !loading ? "var(--bg)" : "var(--text3)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
             </svg>
           </button>
         </div>
-        <p className="text-center label-upper mt-2" style={{ color: "var(--text3)", fontSize: 9 }}>
-          Claude Sonnet{(activeMode === "market-pulse" || activeMode === "strategy-review") ? " · Gemini Search" : ""} · Yahoo Finance · memory: {patternSummary ? "active" : "building"}
-        </p>
       </div>
     </div>
     </>
@@ -947,12 +1015,16 @@ function ChatView() {
 }
 
 /* ─── Preview for unauthenticated users ──────────────────────── */
-function PreviewCoachView() {
+function PreviewCoachView({ activeView, setActiveView }: { activeView: "chat" | "history"; setActiveView: (v: "chat" | "history") => void }) {
   return (
-    <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 130px)" }}>
+    <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex-1 flex flex-col" style={{ position: "relative" }}>
+        {/* Tab toggle */}
+        <div className="px-4 pt-4">
+          <CoachTabToggle activeView={activeView} setActiveView={setActiveView} />
+        </div>
         {/* Mode chips — disabled, visible above the overlay */}
-        <div className="px-4 pt-4 pb-3 flex flex-wrap gap-2 justify-center" style={{ flexShrink: 0 }}>
+        <div className="px-4 pt-1 pb-3 flex flex-wrap gap-2 justify-center" style={{ flexShrink: 0 }}>
           {MODES.map(mode => (
             <div key={mode.id}
               className="flex items-center gap-1.5 mono text-xs px-3 py-2 rounded-xl"
@@ -965,7 +1037,7 @@ function PreviewCoachView() {
 
         {/* Opaque overlay — fills remaining chat area */}
         <div className="flex-1 flex items-center justify-center px-5"
-          style={{ background: "rgba(6,11,20,0.82)", backdropFilter: "blur(6px)" }}>
+          style={{ background: "rgba(6,11,20,0.92)" }}>
           <div className="glass rounded-2xl text-center"
             style={{ padding: "28px 24px", width: "100%", maxWidth: 320, border: "1px solid var(--border)" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", lineHeight: 1.3 }}>
@@ -979,8 +1051,8 @@ function PreviewCoachView() {
       </div>
 
       {/* Disabled input area */}
-      <div style={{ flexShrink: 0, padding: "12px 16px 16px", background: "rgba(6,11,20,0.8)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--border)", opacity: 0.4, pointerEvents: "none" }}>
-        <div className="flex items-end gap-2 rounded-2xl px-3 py-2" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)" }}>
+      <div className="flex-shrink-0 px-3 pb-4 pt-2" style={{ opacity: 0.4, pointerEvents: "none" }}>
+        <div className="flex items-end gap-2.5 rounded-3xl px-4 py-3" style={{ background: "var(--bg3)", border: "1px solid var(--border)" }}>
           <textarea
             disabled
             placeholder="Sign in to start coaching your trades…"
@@ -988,9 +1060,9 @@ function PreviewCoachView() {
             className="flex-1 resize-none outline-none text-sm mono bg-transparent"
             style={{ color: "var(--text)", lineHeight: 1.5, maxHeight: 120, minHeight: 24 }}
           />
-          <div className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center"
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--border)", opacity: 0.3 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
             </svg>
           </div>
@@ -1006,51 +1078,12 @@ export default function CoachTab() {
   const [activeView, setActiveView] = useState<"chat" | "history">("chat")
 
   return (
-    <div className="flex flex-col">
-      {/* Header with sub-tab toggle */}
-      <div className="flex justify-center px-4 pt-4 pb-0">
-        <div
-          className="relative flex rounded-xl overflow-hidden"
-          style={{ border: "1px solid var(--border)" }}
-        >
-          {/* Sliding bubble */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 w-1/2 pointer-events-none"
-            style={{
-              background: "var(--accent3)",
-              border: "1px solid var(--border-accent)",
-              borderRadius: "inherit",
-              transform: activeView === "chat" ? "translateX(0%)" : "translateX(100%)",
-              transition: "transform 0.2s ease",
-            }}
-          />
-          <button
-            onClick={() => setActiveView("chat")}
-            className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[72px]"
-            style={{
-              color: activeView === "chat" ? "var(--accent)" : "var(--text3)",
-              transition: "color 0.2s ease",
-            }}
-          >
-            Chat
-          </button>
-          <button
-            onClick={() => setActiveView("history")}
-            className="relative z-10 flex flex-1 items-center justify-center mono text-xs py-1.5 px-6 min-w-[72px]"
-            style={{
-              color: activeView === "history" ? "var(--accent)" : "var(--text3)",
-              transition: "color 0.2s ease",
-            }}
-          >
-              History
-          </button>
-        </div>
-      </div>
-
+    <div className="flex flex-col flex-1 min-h-0">
       {activeView === "chat"
-        ? (!isAuthenticated ? <PreviewCoachView /> : <ChatView />)
-        : <HistoryView />}
+        ? (!isAuthenticated
+            ? <PreviewCoachView activeView={activeView} setActiveView={setActiveView} />
+            : <ChatView activeView={activeView} setActiveView={setActiveView} />)
+        : <HistoryView activeView={activeView} setActiveView={setActiveView} />}
     </div>
   )
 }

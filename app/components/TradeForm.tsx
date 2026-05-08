@@ -4,7 +4,7 @@ import { useState } from "react"
 import type { Trade } from "../lib/types"
 
 /* ─── Shared helpers ────────────────────────────────────────── */
-export function genId() { return Math.random().toString(36).slice(2, 9) }
+export function genId() { return crypto.randomUUID() }
 
 export const INSTRUMENTS = ["NQ", "MNQ", "ES", "MES", "RTY", "YM", "CL", "GC"]
 export const SESSIONS = ["Asia", "London", "NY AM", "NY PM", "Afternoon"]
@@ -49,6 +49,8 @@ export function TradeForm({ onSubmit, onCancel }: {
   onCancel: () => void
 }) {
   const [form, setForm] = useState(makeEmpty)
+  const [pnlError, setPnlError] = useState<string | null>(null)
+  const [rmultError, setRmultError] = useState<string | null>(null)
   const set = (k: keyof ReturnType<typeof makeEmpty>, v: unknown) =>
     setForm(p => ({ ...p, [k]: v }))
 
@@ -61,6 +63,10 @@ export function TradeForm({ onSubmit, onCancel }: {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
+    const pnlNum = Number(form.pnl)
+    const rmultNum = Number(form.rmult)
+    if (isNaN(pnlNum)) { setPnlError("Enter a valid number"); return }
+    if (isNaN(rmultNum)) { setRmultError("Enter a valid number"); return }
     onSubmit({
       id: genId(),
       date: form.date, time: form.time,
@@ -68,13 +74,15 @@ export function TradeForm({ onSubmit, onCancel }: {
       direction: form.direction,
       session: form.session,
       contracts: Number(form.contracts),
-      pnl: Number(form.pnl),
-      rmult: Number(form.rmult),
+      pnl: pnlNum,
+      rmult: rmultNum,
       outcome: form.outcome,
       confluences: form.confluences,
       notes: form.notes,
     })
     setForm(makeEmpty())
+    setPnlError(null)
+    setRmultError(null)
   }
 
   return (
@@ -127,11 +135,17 @@ export function TradeForm({ onSubmit, onCancel }: {
         </Field>
         <Field label="P&amp;L ($)">
           <input type="text" inputMode="decimal" placeholder="±0.00" value={form.pnl}
-            onChange={e => set("pnl", e.target.value)} className={inputCls} style={inputStyle} required />
+            onChange={e => { set("pnl", e.target.value); setPnlError(null) }} className={inputCls} style={inputStyle} required />
+          {pnlError && (
+            <p className="mono text-xs mt-1" style={{ color: "var(--red)" }}>{pnlError}</p>
+          )}
         </Field>
         <Field label="R-Mult">
           <input type="text" inputMode="decimal" placeholder="±0.0" value={form.rmult}
-            onChange={e => set("rmult", e.target.value)} className={inputCls} style={inputStyle} />
+            onChange={e => { set("rmult", e.target.value); setRmultError(null) }} className={inputCls} style={inputStyle} />
+          {rmultError && (
+            <p className="mono text-xs mt-1" style={{ color: "var(--red)" }}>{rmultError}</p>
+          )}
         </Field>
       </div>
       <Field label="Outcome">
