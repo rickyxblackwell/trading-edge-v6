@@ -29,6 +29,11 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "TRADING EDGE",
   },
+  icons: {
+    apple: [
+      { url: "/apple-icon-180x180.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 }
 
 export const viewport: Viewport = {
