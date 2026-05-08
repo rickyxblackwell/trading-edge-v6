@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { UserCircle, LogIn } from "lucide-react"
 import type { TabId } from "./lib/types"
 import { useAuthContext } from "./components/AuthProvider"
@@ -14,6 +14,8 @@ import TradeModal from "./components/TradeModal"
 import TradeAlert from "./components/TradeAlert"
 import { NotificationProvider } from "./lib/NotificationContext"
 import NotificationBell from "./components/NotificationBell"
+import SessionIndicator from "./components/SessionIndicator"
+import { TabErrorBoundary } from "./components/TabErrorBoundary"
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   {
@@ -77,6 +79,16 @@ export default function App() {
   const [showAccount, setShowAccount] = useState(false)
 
   const ActiveComponent = TAB_COMPONENTS[activeTab]
+  const coachContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (activeTab === "coach" && !showAccount && coachContainerRef.current) {
+      const el = coachContainerRef.current
+      el.classList.remove("fade-up")
+      void el.offsetWidth
+      el.classList.add("fade-up")
+    }
+  }, [activeTab, showAccount])
 
   return (
     <NotificationProvider>
@@ -178,23 +190,16 @@ export default function App() {
         <main
           className="flex-1 overflow-y-auto"
           style={{
+            display: showAccount || activeTab !== "coach" ? undefined : "none",
             paddingBottom: "calc(64px + env(safe-area-inset-bottom))",
-            paddingTop: "env(safe-area-inset-top)",
+            paddingTop: "calc(48px + env(safe-area-inset-top))",
           }}
         >
-          {/* Always-mounted coach — preserves AI state and in-flight responses during tab navigation */}
-          <div
-            className="content-wrap py-4"
-            style={{ display: !showAccount && activeTab === "coach" ? "block" : "none" }}
-          >
-            <CoachTab />
-          </div>
-
           {/* All other tabs — remounted on navigation */}
           {(showAccount || activeTab !== "coach") && (
             <div className="content-wrap py-4 fade-up" key={showAccount ? "account" : activeTab}>
               {showAccount ? (
-                <AccountTab />
+                <TabErrorBoundary tabName="account"><AccountTab /></TabErrorBoundary>
               ) : activeTab === "log" ? (
                 <>
                   <div className="flex justify-center px-4 pb-4">
@@ -236,50 +241,74 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  {journalView === "log" ? <LogTab /> : <StatsTab />}
+                  {journalView === "log"
+                    ? <TabErrorBoundary tabName="log"><LogTab /></TabErrorBoundary>
+                    : <TabErrorBoundary tabName="stats"><StatsTab /></TabErrorBoundary>}
                 </>
               ) : (
-                <ActiveComponent />
+                <TabErrorBoundary tabName={activeTab}><ActiveComponent /></TabErrorBoundary>
               )}
             </div>
           )}
         </main>
+
+        {/* Coach — flex sibling to main; margin (not padding) keeps the box out of the top safe-area zone,
+             preventing iOS Safari from compositing the coach layer behind the fixed overlay buttons */}
+        <div
+          ref={coachContainerRef}
+          style={{
+            display: !showAccount && activeTab === "coach" ? "flex" : "none",
+            flex: 1,
+            flexDirection: "column",
+            minHeight: 0,
+            marginTop: "env(safe-area-inset-top)",
+            marginBottom: "calc(64px + env(safe-area-inset-bottom))",
+          }}
+        >
+          <TabErrorBoundary tabName="coach"><CoachTab /></TabErrorBoundary>
+        </div>
       </div>
 
-      {/* Global FAB — log trade from any tab */}
-      <button
-        onClick={() => setTradeModalOpen(true)}
-        aria-label="Log trade"
-        className="fab-btn"
-        style={{
-          position: "fixed",
-          right: 20,
-          bottom: `calc(72px + env(safe-area-inset-bottom))`,
-          zIndex: 55,
-          width: 52,
-          height: 52,
-          borderRadius: "50%",
-          background: "linear-gradient(135deg, var(--accent), #0ea5e9)",
-          boxShadow: "0 4px 20px rgba(56,189,248,0.45), 0 0 0 1px rgba(56,189,248,0.2)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: "none",
-          cursor: "pointer",
-          transition: "transform 0.18s ease, box-shadow 0.18s ease",
-        }}
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      </button>
+      {/* Journal entry button — top right, notch-safe */}
+      {!showAccount && (
+        <button
+          onClick={() => setTradeModalOpen(true)}
+          aria-label="Log trade"
+          style={{
+            position: "fixed",
+            top: "calc(12px + env(safe-area-inset-top))",
+            right: 16,
+            zIndex: 195,
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            background: "rgba(56,189,248,0.12)",
+            border: "1px solid rgba(56,189,248,0.30)",
+            backdropFilter: "blur(12px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            transition: "background 0.15s ease",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = "rgba(56,189,248,0.20)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "rgba(56,189,248,0.12)")}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+      )}
 
       {/* Global trade entry modal */}
       <TradeModal open={tradeModalOpen} onClose={() => setTradeModalOpen(false)} />
 
       {/* Trade behavior alerts — revenge trades, overtrading, daily limits */}
       <TradeAlert tradeModalOpen={tradeModalOpen} />
+
+      {/* Session indicator (mobile only) — hidden on Account tab */}
+      <SessionIndicator hidden={showAccount} />
 
       {/* Notification bell — hidden on Account tab */}
       <NotificationBell hidden={showAccount} />
