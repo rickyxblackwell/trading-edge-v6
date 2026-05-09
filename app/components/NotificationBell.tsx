@@ -24,12 +24,20 @@ function isDanger(type: NotificationType) {
   return type === "revenge" || type === "daily-hard" || type === "key-error"
 }
 
+function isSuccess(type: NotificationType) {
+  return type === "daily-goal"
+}
+
 function typeColor(type: NotificationType) {
-  return isDanger(type) ? "var(--red)" : "var(--yellow)"
+  if (isDanger(type)) return "var(--red)"
+  if (isSuccess(type)) return "var(--green)"
+  return "var(--yellow)"
 }
 
 function typeBg(type: NotificationType) {
-  return isDanger(type) ? "var(--red-subtle)" : "var(--yellow-subtle)"
+  if (isDanger(type)) return "rgba(255,61,90,0.12)"
+  if (isSuccess(type)) return "rgba(0,229,160,0.10)"
+  return "rgba(255,208,96,0.10)"
 }
 
 function TypeIcon({ type }: { type: NotificationType }) {
@@ -178,7 +186,7 @@ export default function NotificationBell({ hidden }: { hidden?: boolean }) {
         style={{
           position: "fixed",
           top: "calc(12px + env(safe-area-inset-top))",
-          right: 16,
+          right: 68,
           zIndex: 195,
           width: 44,
           height: 44,

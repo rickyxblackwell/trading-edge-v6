@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react"
 import type { Trade } from "../../lib/types"
 import { useTrades } from "../../lib/TradesContext"
-import { TradeForm, outcomeColor } from "../TradeForm"
+import { outcomeColor } from "../TradeForm"
 
 type JournalView = "daily" | "weekly" | "monthly"
 
@@ -18,6 +18,7 @@ function Calendar({
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth()) // 0-indexed
+  const [fading, setFading] = useState(false)
 
   const monthLabel = new Date(year, month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
 
@@ -33,18 +34,22 @@ function Calendar({
     return m
   }, [trades])
 
-  function dayColor(dateStr: string) {
+  function dayColor(dateStr: string): { fg: string; bg: string; ring: string } | null {
     if (!(dateStr in dayMap)) return null
     const pnl = dayMap[dateStr]
-    if (pnl > 0) return "var(--green)"
-    if (pnl < 0) return "var(--red)"
-    return "var(--yellow)"
+    if (pnl > 0) return { fg: "var(--green)",  bg: "rgba(0,229,160,0.20)",  ring: "rgba(0,229,160,0.45)"  }
+    if (pnl < 0) return { fg: "var(--red)",    bg: "rgba(255,61,90,0.20)",  ring: "rgba(255,61,90,0.45)"  }
+    return              { fg: "var(--yellow)", bg: "rgba(255,208,96,0.20)", ring: "rgba(255,208,96,0.45)" }
   }
 
   const nav = (dir: number) => {
-    const d = new Date(year, month + dir, 1)
-    setYear(d.getFullYear())
-    setMonth(d.getMonth())
+    setFading(true)
+    setTimeout(() => {
+      const d = new Date(year, month + dir, 1)
+      setYear(d.getFullYear())
+      setMonth(d.getMonth())
+      setFading(false)
+    }, 130)
   }
 
   const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`
@@ -64,7 +69,8 @@ function Calendar({
         </button>
       </div>
 
-      {/* Day-of-week headers */}
+      {/* Day grid — fades on month change */}
+      <div style={{ opacity: fading ? 0 : 1, transition: "opacity 0.13s ease" }}>
       <div className="grid grid-cols-7 gap-0.5">
         {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
           <div key={i} className="label-upper text-center py-1">{d}</div>
@@ -81,29 +87,59 @@ function Calendar({
             <button
               key={day}
               onClick={() => onSelectDate(isSel ? null : dateStr)}
-              className="flex flex-col items-center justify-center gap-0.5 rounded-lg transition-colors"
-              style={{
-                paddingTop: 6,
-                paddingBottom: 6,
-                background: isSel ? "var(--accent3)" : "transparent",
-                border: isToday ? "1px solid var(--border-accent)" : "1px solid transparent",
-                color: isSel ? "var(--accent)" : isToday ? "var(--accent)" : "var(--text2)",
-              }}
+              className="flex items-center justify-center py-1"
             >
-              <span className="mono text-xs leading-none">{day}</span>
-              {/* Reserved dot slot — always rendered so numbers don't shift */}
-              <span
-                className="rounded-full"
+              {/* Outer selection ring — rounded rect, transparent fill */}
+              <div
                 style={{
-                  width: 5, height: 5, flexShrink: 0,
-                  background: color ?? "transparent",
-                  boxShadow: color ? `0 0 4px ${color}` : "none",
-                  transition: "background 0.2s ease",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  border: isSel ? "1.5px solid rgba(255,255,255,0.30)" : "1.5px solid transparent",
+                  background: "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: "border-color 0.15s ease",
                 }}
-              />
+              >
+                {/* Inner P&L / today circle — always same size and shape */}
+                <div
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    background: color ? color.bg : isToday ? "rgba(56,189,248,0.10)" : "transparent",
+                    border: color
+                      ? `1px solid ${color.ring}`
+                      : isToday
+                      ? "1.5px solid var(--accent)"
+                      : "1px solid transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: isToday
+                      ? `0 0 0 2px rgba(56,189,248,0.35), 0 0 8px rgba(56,189,248,0.35)${color ? `, 0 0 6px ${color.ring}` : ""}`
+                      : color
+                      ? `0 0 7px ${color.ring}`
+                      : "none",
+                  }}
+                >
+                  <span
+                    className="mono text-xs leading-none"
+                    style={{
+                      color: color ? color.fg : isToday ? "var(--accent)" : isSel ? "var(--text)" : "var(--text2)",
+                      fontWeight: color || isToday || isSel ? 600 : 400,
+                    }}
+                  >
+                    {day}
+                  </span>
+                </div>
+              </div>
             </button>
           )
         })}
+      </div>
       </div>
 
       {/* Legend */}
@@ -359,9 +395,8 @@ function TradeCard({ trade, onDelete }: { trade: Trade; onDelete: () => void }) 
 
 /* ─── Main component ────────────────────────────────────────── */
 export default function LogTab() {
-  const { trades, addTrade, deleteTrade } = useTrades()
+  const { trades, deleteTrade } = useTrades()
   const [view, setView] = useState<JournalView>("daily")
-  const [showForm, setShowForm] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
   const displayedTrades = useMemo(() => {
@@ -372,30 +407,6 @@ export default function LogTab() {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="label-upper">Journal</p>
-        <button
-          onClick={() => { setShowForm(v => !v) }}
-          className="flex items-center gap-1.5 mono text-xs px-3 py-1.5 rounded-lg transition-colors duration-150"
-          style={{
-            color: showForm ? "var(--text2)" : "var(--accent)",
-            border: `1px solid ${showForm ? "var(--border)" : "var(--border-accent)"}`,
-            background: showForm ? "transparent" : "var(--accent3)",
-          }}
-        >
-          {showForm ? "✕ Cancel" : "+ New Trade"}
-        </button>
-      </div>
-
-      {/* Entry form */}
-      {showForm && (
-        <TradeForm
-          onSubmit={t => { addTrade(t); setShowForm(false) }}
-          onCancel={() => setShowForm(false)}
-        />
-      )}
-
       {/* Sub-tabs */}
       <div className="flex gap-0 rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
         {(["daily", "weekly", "monthly"] as JournalView[]).map(v => (
