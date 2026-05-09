@@ -4,7 +4,6 @@ import Anthropic from "@anthropic-ai/sdk"
 import { createClient } from "@/lib/supabase/server"
 import { fetchFuturesSnapshot } from "@/app/lib/marketData"
 import type { BehaviorLedger, MilestoneLog, Streaks, SessionIndexEntry, WeeklySummary, MonthlySummary } from "@/app/lib/types"
-import { unstable_cache } from "next/cache"
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js"
 
 const supabaseAdmin = createSupabaseAdmin(
@@ -76,6 +75,49 @@ async function fetchPolygonFutures(symbol: string, apiKey: string): Promise<stri
   }
 }
 
+async function fetchAlphaVantage(fn: string, symbol: string, apiKey: string): Promise<string> {
+  let url: string
+  if (fn === "RSI") {
+    url = `https://www.alphavantage.co/query?function=RSI&symbol=${encodeURIComponent(symbol)}&interval=daily&time_period=14&series_type=close&apikey=${encodeURIComponent(apiKey)}`
+  } else if (fn === "MACD") {
+    url = `https://www.alphavantage.co/query?function=MACD&symbol=${encodeURIComponent(symbol)}&interval=daily&series_type=close&apikey=${encodeURIComponent(apiKey)}`
+  } else if (fn === "NEWS_SENTIMENT") {
+    url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${encodeURIComponent(symbol)}&limit=5&apikey=${encodeURIComponent(apiKey)}`
+  } else {
+    return `[AlphaVantage: unsupported function '${fn}']`
+  }
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      if (res.status === 429) return `[AlphaVantage: rate limited]`
+      return `[AlphaVantage: HTTP ${res.status}]`
+    }
+    const data = await res.json() as Record<string, unknown>
+    if (data["Note"]) return `[AlphaVantage: rate limited — free tier cap reached]`
+    if (data["Information"]) return `[AlphaVantage: ${String(data["Information"]).slice(0, 100)}]`
+    if (fn === "RSI") {
+      const series = data["Technical Analysis: RSI"] as Record<string, { RSI: string }> | undefined
+      if (!series) return `[AlphaVantage RSI: no data for ${symbol}]`
+      const entries = Object.entries(series).slice(0, 5)
+      return `${symbol} RSI(14) daily: ` + entries.map(([d, v]) => `${d}=${parseFloat(v.RSI).toFixed(2)}`).join(", ")
+    }
+    if (fn === "MACD") {
+      const series = data["Technical Analysis: MACD"] as Record<string, { MACD: string; MACD_Signal: string; MACD_Hist: string }> | undefined
+      if (!series) return `[AlphaVantage MACD: no data for ${symbol}]`
+      const entries = Object.entries(series).slice(0, 3)
+      return `${symbol} MACD(12,26,9) daily: ` + entries.map(([d, v]) => `${d} M=${parseFloat(v.MACD).toFixed(4)} S=${parseFloat(v.MACD_Signal).toFixed(4)} H=${parseFloat(v.MACD_Hist).toFixed(4)}`).join(" | ")
+    }
+    if (fn === "NEWS_SENTIMENT") {
+      const feed = data["feed"] as Array<{ title: string; overall_sentiment_label: string }> | undefined
+      if (!feed || feed.length === 0) return `[AlphaVantage NEWS: no articles for ${symbol}]`
+      return `${symbol} news (top ${Math.min(feed.length, 5)}): ` + feed.slice(0, 5).map(a => `[${a.overall_sentiment_label}] ${a.title.slice(0, 80)}`).join(" | ")
+    }
+    return `[AlphaVantage: unhandled response]`
+  } catch {
+    return `[AlphaVantage ${fn}: fetch failed]`
+  }
+}
+
 async function fetchGeminiSearch(query: string, geminiApiKey: string): Promise<string> {
   try {
     const genAI = new GoogleGenAI({ apiKey: geminiApiKey })
@@ -99,35 +141,95 @@ async function fetchGeminiSearch(query: string, geminiApiKey: string): Promise<s
   }
 }
 
-const cachedFetchYahooFinance = unstable_cache(
-  async (symbols: string[]) => fetchFuturesSnapshot(symbols),
-  ["yf-snapshot"],
-  { revalidate: 86400 }
-)
 
-const cachedFetchFRED = unstable_cache(
-  async (seriesId: string) => fetchFREDSeries(seriesId),
-  ["fred"],
-  { revalidate: 86400 }
-)
+const AV_DAILY_CAP = 25
+const AV_CACHE_TTL_MS = 60 * 60 * 1000
+const avCache = new Map<string, { value: string; expiresAt: number }>()
 
-const cachedFetchPolygon = unstable_cache(
-  async (symbol: string, apiKey: string) => fetchPolygonFutures(symbol, apiKey),
-  ["polygon"],
-  { revalidate: 86400 }
-)
+const POLYGON_PER_MIN_CAP = 5
+const POLYGON_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const polygonCache = new Map<string, { value: string; expiresAt: number }>()
+const polygonReqWindow: number[] = []
+
+const GEMINI_DAILY_CAP = 250
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function fetchPolygonWithCounter(symbol: string, apiKey: string): Promise<string> {
+  const cached = polygonCache.get(symbol)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+
+  const cutoff = Date.now() - 60_000
+  while (polygonReqWindow.length && polygonReqWindow[0] < cutoff) {
+    polygonReqWindow.shift()
+  }
+  if (polygonReqWindow.length >= POLYGON_PER_MIN_CAP) {
+    const oldestAge = Math.ceil((60_000 - (Date.now() - polygonReqWindow[0])) / 1000)
+    return `[Polygon: rate limit (${POLYGON_PER_MIN_CAP}/min, free tier) — wait ${oldestAge}s and retry]`
+  }
+  polygonReqWindow.push(Date.now())
+
+  const result = await fetchPolygonFutures(symbol, apiKey)
+  polygonCache.set(symbol, { value: result, expiresAt: Date.now() + POLYGON_CACHE_TTL_MS })
+  return result
+}
+
+async function fetchGeminiWithCounter(
+  query: string,
+  apiKey: string,
+  geminiUsage: { date: string; count: number },
+): Promise<string> {
+  const today = todayUTC()
+  if (geminiUsage.date !== today) {
+    geminiUsage.date = today
+    geminiUsage.count = 0
+  }
+  if (geminiUsage.count >= GEMINI_DAILY_CAP) {
+    return `[Gemini: daily cap reached (${GEMINI_DAILY_CAP}/day, free tier 2.5 Flash) — resets 00:00 UTC]`
+  }
+  geminiUsage.count++
+  return await fetchGeminiSearch(query, apiKey)
+}
+
+async function fetchAlphaVantageWithCounter(
+  fn: string,
+  symbol: string,
+  apiKey: string,
+  avUsage: { date: string; count: number },
+): Promise<string> {
+  const today = todayUTC()
+  if (avUsage.date !== today) {
+    avUsage.date = today
+    avUsage.count = 0
+  }
+
+  const key = `${fn}|${symbol}`
+  const cached = avCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+
+  if (avUsage.count >= AV_DAILY_CAP) {
+    return `[AlphaVantage: daily cap reached (${AV_DAILY_CAP} req/day) — resets 00:00 UTC]`
+  }
+  avUsage.count++
+
+  const result = await fetchAlphaVantage(fn, symbol, apiKey)
+  avCache.set(key, { value: result, expiresAt: Date.now() + AV_CACHE_TTL_MS })
+  return result
+}
 
 const localTools: Anthropic.Tool[] = [
   {
     name: "fetchYahooFinanceSnapshot",
-    description: "Fetch live futures price snapshot. Returns current price, change, and session range for ES, NQ, YM core futures plus any extra symbols passed. Use when the user asks about current prices, market conditions, or a specific symbol's intraday move.",
+    description: "Fetch live market quotes via Yahoo Finance (~15 min delay). Supports any valid ticker: futures (ES, NQ, YM, MES, MNQ), ETFs (SPY, QQQ, DIA, IWM), stocks (AAPL, NVDA, etc.), crypto (BTC-USD), forex (EURUSD=X), indices (^VIX, ^GSPC). Pass an empty array to get the default ES/NQ/YM/RTY futures snapshot. Use whenever the user asks about price, level, or market condition for any instrument.",
     input_schema: {
       type: "object" as const,
       properties: {
         symbols: {
           type: "array",
           items: { type: "string" },
-          description: "Extra futures symbols to include beyond the default ES/NQ/YM core. Pass an empty array for the core snapshot only."
+          description: "Ticker symbols to quote. Use Yahoo Finance format: futures roots (ES, NQ), ETF tickers (SPY, QQQ), stock tickers (AAPL), or pass [] for the default core futures snapshot."
         }
       },
       required: []
@@ -164,6 +266,25 @@ const localTools: Anthropic.Tool[] = [
     }
   },
   {
+    name: "fetchAlphaVantage",
+    description: "Fetch technical indicators or news sentiment for a symbol via Alpha Vantage. Use RSI and MACD for equity/ETF proxies of the user's instruments (SPY=ES, QQQ=NQ, DIA=YM). Use NEWS_SENTIMENT for sentiment analysis on a ticker or index ETF.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        function: {
+          type: "string",
+          enum: ["RSI", "MACD", "NEWS_SENTIMENT"],
+          description: "RSI — 14-period daily RSI (last 5 values). MACD — daily MACD(12,26,9) (last 3 values). NEWS_SENTIMENT — top 5 recent news articles with sentiment label."
+        },
+        symbol: {
+          type: "string",
+          description: "Ticker symbol. For index futures use ETF proxies: SPY (ES/MES), QQQ (NQ/MNQ), DIA (YM/MYM). Accepts any valid equity or ETF ticker."
+        }
+      },
+      required: ["function", "symbol"]
+    }
+  },
+  {
     name: "searchGemini",
     description: "Perform a web search for current market news, strategy research, economic events, or trader-facing information. Generate the search query adaptively based on the user's question and trading context. Examples: 'latest CPI release reaction ES futures', 'FOMC meeting outcome September 2026', 'breakout pattern false signal recent research'.",
     input_schema: {
@@ -182,8 +303,11 @@ const localTools: Anthropic.Tool[] = [
 type ToolDeps = {
   polygonApiKey?: string
   geminiApiKey?: string
+  avApiKey?: string
   watchlist: string[]
   polygonTier?: "full" | "forbidden" | "endpoint_unknown"
+  avUsage: { date: string; count: number }
+  geminiUsage: { date: string; count: number }
 }
 
 async function executeToolCall(
@@ -197,7 +321,7 @@ async function executeToolCall(
       case "fetchYahooFinanceSnapshot": {
         const passed = Array.isArray(inp.symbols) ? (inp.symbols as string[]) : []
         const symbols = passed.length > 0 ? passed : deps.watchlist
-        const result = await cachedFetchYahooFinance(symbols)
+        const result = await fetchFuturesSnapshot(symbols)
         return { toolUseId: id, result: result || "[Yahoo Finance: no data available]" }
       }
       case "fetchFREDSeries": {
@@ -205,7 +329,7 @@ async function executeToolCall(
         if (!["DFF", "CPIAUCSL", "PAYEMS", "UNRATE", "GDP", "T10Y2Y", "VIXCLS"].includes(seriesId)) {
           return { toolUseId: id, result: `[FRED: invalid series_id '${seriesId}']` }
         }
-        const result = await cachedFetchFRED(seriesId)
+        const result = await fetchFREDSeries(seriesId)
         return { toolUseId: id, result }
       }
       case "fetchPolygonFutures": {
@@ -220,7 +344,20 @@ async function executeToolCall(
         // we don't waste cache slots on a constant string.
         const result = deps.polygonTier === "forbidden"
           ? await fetchPolygonFutures(symbol, deps.polygonApiKey)
-          : await cachedFetchPolygon(symbol, deps.polygonApiKey)
+          : await fetchPolygonWithCounter(symbol, deps.polygonApiKey)
+        return { toolUseId: id, result }
+      }
+      case "fetchAlphaVantage": {
+        const fn = String(inp.function ?? "").toUpperCase()
+        const symbol = String(inp.symbol ?? "").toUpperCase().trim()
+        if (!["RSI", "MACD", "NEWS_SENTIMENT"].includes(fn)) {
+          return { toolUseId: id, result: `[AlphaVantage: invalid function '${fn}']` }
+        }
+        if (!symbol) return { toolUseId: id, result: "[AlphaVantage: symbol required]" }
+        if (!deps.avApiKey) {
+          return { toolUseId: id, result: "[AlphaVantage: no API key configured — set in Account tab]" }
+        }
+        const result = await fetchAlphaVantageWithCounter(fn, symbol, deps.avApiKey, deps.avUsage)
         return { toolUseId: id, result }
       }
       case "searchGemini": {
@@ -229,7 +366,7 @@ async function executeToolCall(
         if (!deps.geminiApiKey) {
           return { toolUseId: id, result: "[Gemini search: no API key configured — set in Account tab]" }
         }
-        const result = await fetchGeminiSearch(query, deps.geminiApiKey)
+        const result = await fetchGeminiWithCounter(query, deps.geminiApiKey, deps.geminiUsage)
         return { toolUseId: id, result }
       }
       default:
@@ -490,9 +627,9 @@ export async function POST(req: NextRequest) {
     }
 
     const geminiApiKey = user.user_metadata?.gemini_api_key as string | undefined
-
     const claudeApiKey = user.user_metadata?.claude_api_key as string | undefined
     const polygonApiKey = user.user_metadata?.polygon_api_key as string | undefined
+    const avApiKey = user.user_metadata?.av_api_key as string | undefined
 
     body = await req.json()
     const {
@@ -532,6 +669,12 @@ export async function POST(req: NextRequest) {
       monthlySummaries: Array<{ monthOf: string; trades: number; pnl: number; winRate: number; bestWeekOf: string; worstWeekOf: string }>
       conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
     }
+
+    const nowET = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }))
+    const todayET = getTradingDayKey()
+    const dayOfWeek = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][nowET.getDay()]
+    const timeET = nowET.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })
+    const currentDateLine = `CURRENT DATE/TIME: ${dayOfWeek}, ${todayET} | ${timeET} ET`
 
     const sid = (sessionId as string) || "default"
     const last = lastCallTime.get(sid) || 0
@@ -623,7 +766,7 @@ export async function POST(req: NextRequest) {
         ).join("\n")
       : ""
 
-    const claudeSystemContext = `${STRATEGY_SYSTEM}${extraStrategy}
+    const claudeSystemContext = `${currentDateLine}\n\n${STRATEGY_SYSTEM}${extraStrategy}
 ${watchlistSection}
 RECENT TRADES (newest first):
 ${tradesSummary}
@@ -671,7 +814,12 @@ ABSOLUTE RULES:
 
 Use markdown formatting (## headers, bullet points) for structured responses. Plain prose for conversational chat.
 
-SPECIAL COMMANDS — include at the very end of your response when applicable (no markdown, one per line):
+SPECIAL COMMANDS — include at the very end of every response (no markdown, one per line):
+MOMENTUM: <value> — always required. Choose exactly one:
+  positive — trader is improving, clean execution, rule adherence, encouraging trend
+  negative — rule violations, emotional trading, avoidable losses, concerning pattern
+  neutral  — strategic discussion, mixed signals, general process chat
+  info     — factual question, educational inquiry, market data request, watchlist management
 WATCHLIST_ADD: TICKER — when the user asks to track a symbol
 WATCHLIST_REMOVE: TICKER — when the user asks to stop tracking a symbol`
 
@@ -704,7 +852,7 @@ ${watchlistArr.map(s => `- **${s}**: price action, key S/R levels, anything nota
 
 ## Broader Market`
         : `## Market`
-      userPrompt = `Give me a trader-focused market pulse for my NYSE open session (09:30–11:30 ET). Use markdown formatting.
+      userPrompt = `Give me a trader-focused market pulse for ${dayOfWeek}, ${todayET} — NYSE open session (09:30–11:30 ET). Use markdown formatting.
 
 ${watchlistFocus}
 - ES / NQ macro backdrop and intraday bias
@@ -746,11 +894,27 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
     // 07-03 Task 3 deleted the original watchlistSymbols const from the pre-fetch block.
     // This is now the single canonical declaration in the POST handler scope (no shadowing).
     const watchlistSymbols = watchlistArr
-    const toolDeps = {
+    const today = todayUTC()
+    const storedAvUsage = user.user_metadata?.av_usage as { date?: string; count?: number } | undefined
+    const avUsage = {
+      date: today,
+      count: storedAvUsage?.date === today ? (storedAvUsage.count ?? 0) : 0,
+    }
+    const avUsageStartCount = avUsage.count
+    const storedGeminiUsage = user.user_metadata?.gemini_usage as { date?: string; count?: number } | undefined
+    const geminiUsage = {
+      date: today,
+      count: storedGeminiUsage?.date === today ? (storedGeminiUsage.count ?? 0) : 0,
+    }
+    const geminiUsageStartCount = geminiUsage.count
+    const toolDeps: ToolDeps = {
       polygonApiKey,
       geminiApiKey,
+      avApiKey,
       watchlist: watchlistSymbols,
       polygonTier: process.env.POLYGON_TIER as "full" | "forbidden" | "endpoint_unknown" | undefined,
+      avUsage,
+      geminiUsage,
     }
 
     let response = await anthropic.messages.create({
@@ -817,15 +981,17 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
       reply = reply.replace(/PATTERN SUMMARY UPDATE:[\s\S]+$/i, "").trim()
     }
 
-    // Extract MOMENTUM marker — fallback to keyword detection for analyze mode
+    // Extract MOMENTUM marker — present on every response via system prompt instruction
     let momentum = "neutral"
-    const momentumMatch = rawText.match(/^MOMENTUM:\s*(positive|neutral|negative)/im)
+    const momentumMatch = rawText.match(/^MOMENTUM:\s*(positive|neutral|negative|info)/im)
     if (momentumMatch) {
       momentum = momentumMatch[1].toLowerCase()
     } else if (mode === "analyze") {
       const lc = rawText.toLowerCase()
       if (lc.includes("improving") || lc.includes("positive momentum")) momentum = "positive"
       else if (lc.includes("consistent losses") || lc.includes("declining") || lc.includes("overtrading")) momentum = "negative"
+    } else if (mode === "market-pulse") {
+      momentum = "info"
     }
     reply = reply.replace(/^MOMENTUM:\s*.+$/im, "").trim()
 
@@ -910,6 +1076,12 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
     if (weeklyUpdate !== null) memoryUpdates.weekly_summaries = weeklyUpdate
     if (monthlyUpdate !== null) memoryUpdates.monthly_summaries = monthlyUpdate
     if (newPatternSummary !== undefined && newPatternSummary !== null) memoryUpdates.pattern_summary = newPatternSummary
+    if (avUsage.count !== avUsageStartCount || storedAvUsage?.date !== avUsage.date) {
+      memoryUpdates.av_usage = { date: avUsage.date, count: avUsage.count }
+    }
+    if (geminiUsage.count !== geminiUsageStartCount || storedGeminiUsage?.date !== geminiUsage.date) {
+      memoryUpdates.gemini_usage = { date: geminiUsage.date, count: geminiUsage.count }
+    }
 
     if (Object.keys(memoryUpdates).length > 0) {
       const { error: writeError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
@@ -941,7 +1113,7 @@ Under 300 words. End with: TITLE: <6-8 word summary of the key strategic insight
     }
 
     return NextResponse.json({
-      reply, newPatternSummary, sessionTitle, watchlistAdd, watchlistRemove,
+      reply, momentum, newPatternSummary, sessionTitle, watchlistAdd, watchlistRemove,
       sessionIndexUpdate, behaviorLedgerUpdate: null, milestoneUpdate: null, streaksUpdate: null,
       weeklyUpdate: null, monthlyUpdate: null,
     })
