@@ -262,7 +262,7 @@ export default function App() {
             flexDirection: "column",
             minHeight: 0,
             marginTop: "env(safe-area-inset-top)",
-            marginBottom: "calc(64px + env(safe-area-inset-bottom))",
+            marginBottom: "calc(25px + env(safe-area-inset-bottom))",
           }}
         >
           <TabErrorBoundary tabName="coach"><CoachTab /></TabErrorBoundary>
