@@ -18,6 +18,10 @@ function localToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
+const DAILY_HARD_LIMIT = -500
+const DAILY_SOFT_LIMIT = -250
+const DAILY_PROFIT_GOAL = 1000
+
 function detectPnlAlert(trades: Trade[]): Alert | null {
   const today = localToday()
   const todayTrades = trades.filter(t => t.date === today)
@@ -25,7 +29,7 @@ function detectPnlAlert(trades: Trade[]): Alert | null {
 
   const todayPnl = todayTrades.reduce((sum, t) => sum + t.pnl, 0)
 
-  if (todayPnl <= -750) {
+  if (todayPnl <= DAILY_HARD_LIMIT) {
     return {
       type: "daily-hard",
       title: "Hard Limit Alert",
@@ -35,17 +39,17 @@ function detectPnlAlert(trades: Trade[]): Alert | null {
     }
   }
 
-  if (todayPnl <= -500) {
+  if (todayPnl <= DAILY_SOFT_LIMIT) {
     return {
       type: "daily-soft",
       title: "Soft Limit Hit",
-      message: `Daily P&L: -$${Math.abs(todayPnl).toFixed(0)}. You've crossed your soft limit. Reduce size or stop — the hard limit is $${(1000 + todayPnl).toFixed(0)} away.`,
+      message: `Daily P&L: -$${Math.abs(todayPnl).toFixed(0)}. You've crossed your soft limit. Reduce size or stop — the hard limit is $${(Math.abs(DAILY_HARD_LIMIT) - Math.abs(todayPnl)).toFixed(0)} away.`,
       severity: "warning",
       key: `daily-soft-${today}-${Math.floor(todayPnl / 50)}`,
     }
   }
 
-  if (todayPnl >= 1000) {
+  if (todayPnl >= DAILY_PROFIT_GOAL) {
     return {
       type: "daily-goal",
       title: "Daily Goal Hit",
@@ -74,7 +78,20 @@ function detectModalAlert(trades: Trade[]): Alert | null {
 
   if (minAgo < 0 || minAgo > 30) return null
 
+  const todayPnl = todayTrades.reduce((sum, t) => sum + t.pnl, 0)
+  const profitGoalHit = todayPnl >= DAILY_PROFIT_GOAL
+  const hardStopHit = todayPnl <= DAILY_HARD_LIMIT
+
   if (last.outcome === "loss") {
+    if (hardStopHit) {
+      return {
+        type: "revenge",
+        title: "Revenge Trade Warning",
+        message: `You're down -$${Math.abs(todayPnl).toFixed(0)} today and the hard limit is already breached. The market doesn't owe you anything back. Close the platform — no more trades.`,
+        severity: "danger",
+        key: `revenge-runningloss-${today}-${Math.floor(todayPnl / 50)}`,
+      }
+    }
     return {
       type: "revenge",
       title: "Revenge Trade Warning",
@@ -85,6 +102,15 @@ function detectModalAlert(trades: Trade[]): Alert | null {
   }
 
   if (last.outcome === "win" && last.pnl >= 500) {
+    if (profitGoalHit) {
+      return {
+        type: "overtrading",
+        title: "Overtrading Alert",
+        message: `You've already made +$${todayPnl.toFixed(0)} today. The number is locked in — take a walk, hit the gym. The market will still be here tomorrow.`,
+        severity: "warning",
+        key: `overtrading-runningwin-${today}-${Math.floor(todayPnl / 50)}`,
+      }
+    }
     return {
       type: "overtrading",
       title: "Overtrading Alert",
@@ -137,8 +163,14 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
     if (detected) {
       enqueue([detected])
     } else {
-      // Clear stale P&L alerts from queue when P&L recovers
-      setQueue(q => q.filter(a => a.type !== "daily-soft" && a.type !== "daily-hard"))
+      // P&L recovered — clear queue and unblock dismissed/notified keys so alerts re-fire
+      setQueue(q => q.filter(a => a.type !== "daily-soft" && a.type !== "daily-hard" && a.type !== "daily-goal"))
+      for (const k of [...dismissedKeys.current]) {
+        if (k.startsWith("daily-soft-") || k.startsWith("daily-hard-") || k.startsWith("daily-goal-")) {
+          dismissedKeys.current.delete(k)
+          notifiedKeys.current.delete(k)
+        }
+      }
     }
   }, [trades]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -156,14 +188,24 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
 
   if (!alert) return null
 
-  const { color, bg, borderColor, shadow } =
+  const { color, bg, borderColor, shadow, shadowBright } =
     alert.severity === "danger"
-      ? { color: "var(--red)",    bg: "rgba(255,61,90,0.10)",   borderColor: "rgba(255,61,90,0.35)",   shadow: "rgba(255,61,90,0.18)" }
+      ? { color: "var(--red)",    bg: "rgba(255,61,90,0.10)",   borderColor: "rgba(255,61,90,0.35)",   shadow: "rgba(255,61,90,0.18)",  shadowBright: "rgba(255,61,90,0.45)" }
       : alert.severity === "success"
-      ? { color: "var(--green)",  bg: "rgba(0,229,160,0.08)",   borderColor: "rgba(0,229,160,0.30)",   shadow: "rgba(0,229,160,0.12)" }
-      : { color: "var(--yellow)", bg: "rgba(255,208,96,0.08)",  borderColor: "rgba(255,208,96,0.35)",  shadow: "rgba(255,208,96,0.12)" }
+      ? { color: "var(--green)",  bg: "rgba(0,229,160,0.08)",   borderColor: "rgba(0,229,160,0.30)",   shadow: "rgba(0,229,160,0.12)",  shadowBright: "rgba(0,229,160,0.38)" }
+      : { color: "var(--yellow)", bg: "rgba(255,208,96,0.08)",  borderColor: "rgba(255,208,96,0.35)",  shadow: "rgba(255,208,96,0.12)", shadowBright: "rgba(255,208,96,0.42)" }
 
   return (
+    <>
+    <style>{`
+      @keyframes alert-pulse-glow {
+        0%, 100% { box-shadow: 0 8px 32px var(--alert-glow-dim), 0 0 0 1px var(--alert-border); }
+        50%       { box-shadow: 0 8px 56px var(--alert-glow-bright), 0 0 32px var(--alert-glow-bright), 0 0 0 1px var(--alert-border); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .alert-pulse-glow { animation: none !important; }
+      }
+    `}</style>
     <div
       style={{
         position: "fixed",
@@ -183,6 +225,7 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
       }}
     >
       <div
+        className="alert-pulse-glow"
         style={{
           width: "100%",
           maxWidth: 400,
@@ -190,8 +233,11 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
           background: bg,
           border: `1px solid ${borderColor}`,
           padding: "20px",
-          boxShadow: `0 8px 32px ${shadow}, 0 0 0 1px ${borderColor}`,
-        }}
+          animation: "alert-pulse-glow 2s ease-in-out infinite",
+          "--alert-glow-dim": shadow,
+          "--alert-glow-bright": shadowBright,
+          "--alert-border": borderColor,
+        } as React.CSSProperties}
       >
         {/* Title row */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -252,5 +298,6 @@ export default function TradeAlert({ tradeModalOpen }: { tradeModalOpen: boolean
         </button>
       </div>
     </div>
+    </>
   )
 }

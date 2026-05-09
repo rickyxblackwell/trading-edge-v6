@@ -19,8 +19,16 @@ export function outcomeColor(o: string) {
   return "var(--yellow)"
 }
 
-const inputCls = "w-full rounded-lg px-3 py-2 text-sm mono outline-none transition-colors duration-150"
-const inputStyle = { background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", color: "var(--text)" }
+const inputCls = "w-full rounded-lg px-3 py-2 mono outline-none transition-colors duration-150"
+const inputStyle = {
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid var(--border)",
+  color: "var(--text)",
+  fontSize: "16px",
+  minWidth: 0,
+  WebkitAppearance: "none" as const,
+  appearance: "none" as const,
+}
 
 function makeEmpty() {
   return {
@@ -87,7 +95,21 @@ export function TradeForm({ onSubmit, onCancel }: {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      {/* Top action row — visible without scrolling so new users see how to save */}
+      <div className="flex gap-2 sticky top-0 z-10 -mx-1 px-1 py-1"
+        style={{ background: "linear-gradient(to bottom, var(--glass-md) 70%, transparent)", backdropFilter: "blur(6px)" }}>
+        <button type="button" onClick={onCancel}
+          className="flex-1 py-2.5 rounded-xl mono text-sm transition-colors duration-150"
+          style={{ border: "1px solid var(--border)", color: "var(--text2)" }}>
+          Cancel
+        </button>
+        <button type="submit"
+          className="btn-accent flex-1 py-2.5 rounded-xl mono text-sm font-semibold"
+          style={{ color: "var(--bg)" }}>
+          LOG TRADE
+        </button>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Field label="Date">
           <input type="date" value={form.date} onChange={e => set("date", e.target.value)}
             className={inputCls} style={inputStyle} required />
@@ -184,18 +206,6 @@ export function TradeForm({ onSubmit, onCancel }: {
           value={form.notes} onChange={e => set("notes", e.target.value)}
           className={inputCls + " resize-none"} style={{ ...inputStyle, lineHeight: "1.5" }} />
       </Field>
-      <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 rounded-xl mono text-sm transition-colors duration-150"
-          style={{ border: "1px solid var(--border)", color: "var(--text2)" }}>
-          Cancel
-        </button>
-        <button type="submit"
-          className="btn-accent flex-1 py-2.5 rounded-xl mono text-sm font-semibold"
-          style={{ color: "var(--bg)" }}>
-          LOG TRADE
-        </button>
-      </div>
     </form>
   )
 }

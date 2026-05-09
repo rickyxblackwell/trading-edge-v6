@@ -19,6 +19,7 @@ export interface CoachingEntry {
   tradeCount: number
   title: string          // AI-generated 6-8 word summary
   fullContent: string    // full coach response text
+  userPrompt?: string    // user's typed message or canonical mode prompt that triggered this entry
   archived: boolean
   mode: "analyze" | "market-pulse" | "strategy-review" | "chat"
   // legacy structured fields (kept for backward compat)

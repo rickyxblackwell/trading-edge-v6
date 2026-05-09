@@ -186,6 +186,10 @@ function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: ()
           <div className="flex items-center gap-2 flex-wrap">
             <span className="label-upper" style={{ color: "var(--text3)" }}>{modeLabel}</span>
             <span className="label-upper" style={{ color: "var(--text3)" }}>·</span>
+            <span className="label-upper mono" style={{ color: "var(--text3)" }}>
+              {new Date(entry.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+            </span>
+            <span className="label-upper" style={{ color: "var(--text3)" }}>·</span>
             <span className="label-upper" style={{ color: "var(--text3)" }}>{relativeTime(entry.timestamp)}</span>
           </div>
         </div>
@@ -207,11 +211,34 @@ function HistoryCard({ entry, onArchive }: { entry: CoachingEntry; onArchive: ()
       {/* Expanded content */}
       {expanded && (
         <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="pt-3 text-sm rounded-xl p-3"
-            style={{ color: "var(--text2)", lineHeight: 1.7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", wordBreak: "break-word" }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {entry.fullContent || entry.marketSnapshot || entry.priority || "No content available."}
-            </ReactMarkdown>
+          {entry.userPrompt && (
+            <div className="pt-3">
+              <p className="label-upper mb-1.5" style={{ color: "var(--text3)" }}>You asked</p>
+              <div
+                className="text-sm rounded-xl px-3 py-2.5"
+                style={{
+                  color: "var(--text)",
+                  lineHeight: 1.55,
+                  background: "var(--accent3)",
+                  border: "1px solid var(--border-accent)",
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {entry.userPrompt}
+              </div>
+            </div>
+          )}
+          <div>
+            {entry.userPrompt && (
+              <p className="label-upper mb-1.5" style={{ color: "var(--text3)" }}>Coach replied</p>
+            )}
+            <div className={entry.userPrompt ? "text-sm rounded-xl p-3" : "pt-3 text-sm rounded-xl p-3"}
+              style={{ color: "var(--text2)", lineHeight: 1.7, background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", wordBreak: "break-word" }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {entry.fullContent || entry.marketSnapshot || entry.priority || "No content available."}
+              </ReactMarkdown>
+            </div>
           </div>
           <button onClick={onArchive}
             className="mono text-xs px-3 py-1.5 rounded-lg transition-colors"
@@ -445,12 +472,14 @@ function ChatView({ activeView, setActiveView }: { activeView: "chat" | "history
         "Chat session"
 
       const lastReply = assistantMsgs[assistantMsgs.length - 1].content
+      const firstUserPrompt = msgs.find(m => m.role === "user")?.content ?? ""
       const entry: CoachingEntry = {
         id: genId(),
         timestamp: new Date().toISOString(),
         tradeCount: tradesRef.current.length,
         title,
         fullContent: lastReply,
+        userPrompt: firstUserPrompt,
         archived: false,
         mode: (sessionModeRef.current || "chat") as CoachingEntry["mode"],
         marketSnapshot: "",
@@ -628,6 +657,7 @@ function ChatView({ activeView, setActiveView }: { activeView: "chat" | "history
           tradeCount: tradesRef.current.length,
           title,
           fullContent: data.reply,
+          userPrompt: text,
           archived: false,
           mode: mode as CoachingEntry["mode"],
           marketSnapshot: "",
