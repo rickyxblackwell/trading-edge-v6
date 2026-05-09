@@ -151,7 +151,9 @@ const POLYGON_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const polygonCache = new Map<string, { value: string; expiresAt: number }>()
 const polygonReqWindow: number[] = []
 
-const GEMINI_DAILY_CAP = 250
+const GEMINI_DAILY_CAP = 500
+const GEMINI_PER_MIN_CAP = 5
+const geminiReqWindow: number[] = []
 
 function todayUTC(): string {
   return new Date().toISOString().slice(0, 10)
@@ -189,6 +191,17 @@ async function fetchGeminiWithCounter(
   if (geminiUsage.count >= GEMINI_DAILY_CAP) {
     return `[Gemini: daily cap reached (${GEMINI_DAILY_CAP}/day, free tier 2.5 Flash) — resets 00:00 UTC]`
   }
+
+  const cutoff = Date.now() - 60_000
+  while (geminiReqWindow.length && geminiReqWindow[0] < cutoff) {
+    geminiReqWindow.shift()
+  }
+  if (geminiReqWindow.length >= GEMINI_PER_MIN_CAP) {
+    const oldestAge = Math.ceil((60_000 - (Date.now() - geminiReqWindow[0])) / 1000)
+    return `[Gemini: rate limit (${GEMINI_PER_MIN_CAP}/min, free tier 2.5 Flash) — wait ${oldestAge}s and retry]`
+  }
+  geminiReqWindow.push(Date.now())
+
   geminiUsage.count++
   return await fetchGeminiSearch(query, apiKey)
 }
