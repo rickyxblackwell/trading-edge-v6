@@ -28,3 +28,11 @@ for (const { file, size } of targets) {
 
 copyFileSync(src, resolve(publicDir, "icon.svg"))
 console.log("wrote public/icon.svg")
+
+const splashSrc = resolve(root, "scripts/splash-source.svg")
+const splash = readFileSync(splashSrc)
+await sharp(splash, { density: 300 })
+  .resize(1206, 2622)
+  .png({ compressionLevel: 9 })
+  .toFile(resolve(publicDir, "splash-iphone-17pro.png"))
+console.log("wrote public/splash-iphone-17pro.png")

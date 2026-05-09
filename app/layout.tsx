@@ -28,6 +28,13 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "TRADING EDGE",
+    startupImage: [
+      {
+        url: "/splash-iphone-17pro.png",
+        media: "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      { url: "/splash-iphone-17pro.png" },
+    ],
   },
   icons: {
     icon: [

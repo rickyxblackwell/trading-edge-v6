@@ -329,7 +329,7 @@ body {
   left: 0;
   right: 0;
   z-index: 50;
-  background: rgba(6, 11, 20, 0.92);
+  background: var(--bg);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -430,6 +430,7 @@ body {
   }
 }
 
+
 /* ─── Form input focus glow ──────────────────────────────── */
 input:focus,
 select:focus,
@@ -437,6 +438,16 @@ textarea:focus {
   border-color: rgba(56, 189, 248, 0.45) !important;
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.08), 0 0 16px rgba(56, 189, 248, 0.05) !important;
   outline: none;
+}
+
+/* iOS Safari auto-zooms when input font-size < 16px on focus.
+   Force 16px on mobile to prevent the zoom-jump (deszooms via pinch otherwise). */
+@media (max-width: 1023px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* ─── Primary button — gradient + glow (21st.dev pattern) ── */
@@ -492,6 +503,11 @@ textarea:focus {
 .fab-btn:active {
   transform: scale(0.92) !important;
   transition-duration: 0.08s !important;
+}
+
+.coach-input::placeholder {
+  color: var(--accent);
+  opacity: 0.6;
 }
 
 .fade-up {

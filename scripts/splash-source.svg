@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1206 2622" width="1206" height="2622">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="80%">
+      <stop offset="0%" stop-color="#142235"/>
+      <stop offset="55%" stop-color="#0a1220"/>
+      <stop offset="100%" stop-color="#060b14"/>
+    </radialGradient>
+    <radialGradient id="orbCyan" cx="22%" cy="32%" r="42%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orbViolet" cx="80%" cy="68%" r="42%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stroke" x1="20%" y1="100%" x2="80%" y2="0%">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="55%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#7dd3fc"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+
+  <rect width="1206" height="2622" fill="url(#bg)"/>
+  <rect width="1206" height="2622" fill="url(#orbCyan)"/>
+  <rect width="1206" height="2622" fill="url(#orbViolet)"/>
+
+  <g transform="translate(335, 920)">
+    <g opacity="0.55">
+      <path d="M 0 380 L 268 60 L 536 380" stroke="#7c3aed" stroke-width="110"
+            stroke-linecap="round" stroke-linejoin="round" fill="none" filter="url(#glow)"/>
+    </g>
+    <path d="M 0 380 L 268 60 L 536 380" stroke="url(#stroke)" stroke-width="108"
+          stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M 92 416 L 268 220 L 444 416" stroke="#38bdf8" stroke-width="20"
+          stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.85"/>
+  </g>
+
+  <text x="603" y="1620" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif"
+        font-size="78" font-weight="600" letter-spacing="14"
+        fill="#dde2f0">TRADING EDGE</text>
+  <text x="603" y="1700" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif"
+        font-size="28" font-weight="400" letter-spacing="8"
+        fill="#7a87a8">FUTURES JOURNAL · AI COACH</text>
+</svg>

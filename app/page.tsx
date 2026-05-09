@@ -269,32 +269,35 @@ export default function App() {
         </div>
       </div>
 
-      {/* Journal entry button — top right, notch-safe */}
+      {/* Trade entry FAB — bottom-right, thumb-reach zone, above tab bar + home indicator */}
       {!showAccount && (
         <button
           onClick={() => setTradeModalOpen(true)}
           aria-label="Log trade"
           style={{
             position: "fixed",
-            top: "calc(12px + env(safe-area-inset-top))",
-            right: 16,
+            bottom: "calc(76px + env(safe-area-inset-bottom))",
+            right: 18,
             zIndex: 195,
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            background: "rgba(56,189,248,0.12)",
-            border: "1px solid rgba(56,189,248,0.30)",
-            backdropFilter: "blur(12px)",
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            background: "rgba(56,189,248,0.18)",
+            border: "1px solid rgba(56,189,248,0.45)",
+            backdropFilter: "blur(14px) saturate(140%)",
+            WebkitBackdropFilter: "blur(14px) saturate(140%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
-            transition: "background 0.15s ease",
+            transition: "background 0.15s ease, transform 0.12s ease",
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = "rgba(56,189,248,0.20)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "rgba(56,189,248,0.12)")}
+          onMouseEnter={e => (e.currentTarget.style.background = "rgba(56,189,248,0.28)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "rgba(56,189,248,0.18)")}
+          onTouchStart={e => (e.currentTarget.style.transform = "scale(0.94)")}
+          onTouchEnd={e => (e.currentTarget.style.transform = "scale(1)")}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>

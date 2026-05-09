@@ -28,13 +28,13 @@
   <rect width="1024" height="1024" fill="url(#orbViolet)"/>
 
   <g opacity="0.55">
-    <path d="M 220 720 L 512 380 L 804 720" stroke="#7c3aed" stroke-width="120"
+    <path d="M 220 670 L 512 330 L 804 670" stroke="#7c3aed" stroke-width="120"
           stroke-linecap="round" stroke-linejoin="round" fill="none" filter="url(#glow)"/>
   </g>
 
-  <path d="M 220 720 L 512 380 L 804 720" stroke="url(#stroke)" stroke-width="118"
+  <path d="M 220 670 L 512 330 L 804 670" stroke="url(#stroke)" stroke-width="118"
         stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 
-  <path d="M 320 760 L 512 540 L 704 760" stroke="#38bdf8" stroke-width="22"
+  <path d="M 320 710 L 512 490 L 704 710" stroke="#38bdf8" stroke-width="22"
         stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.85"/>
 </svg>
