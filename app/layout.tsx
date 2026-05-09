@@ -30,6 +30,10 @@ export const metadata: Metadata = {
     title: "TRADING EDGE",
   },
   icons: {
+    icon: [
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
     apple: [
       { url: "/apple-icon-180x180.png", sizes: "180x180", type: "image/png" },
     ],
