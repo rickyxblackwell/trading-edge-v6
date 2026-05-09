@@ -52,9 +52,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 /* ─── Trade entry form (shared) ─────────────────────────────── */
-export function TradeForm({ onSubmit, onCancel }: {
+export function TradeForm({ onSubmit }: {
   onSubmit: (t: Trade) => void
-  onCancel: () => void
 }) {
   const [form, setForm] = useState(makeEmpty)
   const [pnlError, setPnlError] = useState<string | null>(null)
@@ -95,16 +94,11 @@ export function TradeForm({ onSubmit, onCancel }: {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      {/* Top action row — visible without scrolling so new users see how to save */}
-      <div className="flex gap-2 sticky top-0 z-10 -mx-1 px-1 py-1"
+      {/* Top action — single full-width submit, sticky so it's always reachable */}
+      <div className="sticky top-0 z-10 -mx-1 px-1 py-1"
         style={{ background: "linear-gradient(to bottom, var(--glass-md) 70%, transparent)", backdropFilter: "blur(6px)" }}>
-        <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 rounded-xl mono text-sm transition-colors duration-150"
-          style={{ border: "1px solid var(--border)", color: "var(--text2)" }}>
-          Cancel
-        </button>
         <button type="submit"
-          className="btn-accent flex-1 py-2.5 rounded-xl mono text-sm font-semibold"
+          className="btn-accent w-full py-3 rounded-xl mono text-sm font-semibold tracking-wide"
           style={{ color: "var(--bg)" }}>
           LOG TRADE
         </button>
