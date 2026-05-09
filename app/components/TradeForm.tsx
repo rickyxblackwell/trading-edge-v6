@@ -2,9 +2,9 @@
 
 import { useState } from "react"
 import type { Trade } from "../lib/types"
+import { genId } from "../lib/genId"
 
-/* ─── Shared helpers ────────────────────────────────────────── */
-export function genId() { return crypto.randomUUID() }
+export { genId }
 
 export const INSTRUMENTS = ["NQ", "MNQ", "ES", "MES", "RTY", "YM", "CL", "GC"]
 export const SESSIONS = ["Asia", "London", "NY AM", "NY PM", "Afternoon"]

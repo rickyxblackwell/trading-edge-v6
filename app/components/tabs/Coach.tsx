@@ -8,6 +8,7 @@ import { useTrades } from "../../lib/TradesContext"
 import { useAuthContext } from "@/app/components/AuthProvider"
 import { useNotifications } from "../../lib/NotificationContext"
 import type { ChatMessage, CoachingEntry } from "../../lib/types"
+import { genId } from "../../lib/genId"
 
 function buildCoachingContextSelection(
   history: CoachingEntry[]
@@ -42,14 +43,10 @@ function parseWatchlistIntent(text: string): { add: string[]; remove: string[] }
   return isRemove ? { add: [], remove: tickers } : { add: tickers, remove: [] }
 }
 
-function genId() {
-  return crypto.randomUUID()
-}
-
 function genSessionId() {
   if (typeof window === "undefined") return "ssr"
   let sid = sessionStorage.getItem("edge_session_id")
-  if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("edge_session_id", sid) }
+  if (!sid) { sid = genId(); sessionStorage.setItem("edge_session_id", sid) }
   return sid
 }
 

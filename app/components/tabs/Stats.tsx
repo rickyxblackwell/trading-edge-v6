@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react"
 import type { Trade } from "../../lib/types"
+import { genId } from "../../lib/genId"
 import {
   AreaChart,
   Area,
@@ -278,7 +279,7 @@ function normalizeDirection(raw: unknown): "long" | "short" {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeTrade(t: any): Trade {
   return {
-    id: String(t.id ?? crypto.randomUUID()),
+    id: String(t.id ?? genId()),
     date: String(t.date ?? ""),
     time: String(t.time ?? ""),
     instrument: String(t.instrument ?? ""),
