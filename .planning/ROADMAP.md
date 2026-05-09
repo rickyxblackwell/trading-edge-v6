@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Auth & Security** - Supabase auth (email/password), API keys server-side in user metadata, `/api/coach` guarded with 401
 - [x] **Phase 2: Supabase Persistence** - Trades, coaching history, and pattern summary in Supabase; V5 localStorage migration; localStorage as read cache
-- [ ] **Phase 3: Stability & PWA** - ErrorBoundary, bug fixes (history cap, ID generation, input validation), web app manifest, strategyText reactive state
+- [x] **Phase 3: Stability & PWA** - ErrorBoundary, bug fixes (history cap, ID generation, input validation), web app manifest, strategyText reactive state (completed 2026-05-09)
 - [ ] **Phase 4: Stats Refactor & Tests** - Split Stats.tsx monolith into focused components, add TypeScript test suite for core calculations
 - [ ] **Phase 5: Polish & Cleanup** - Security headers, remove legacy HTML prototypes, clean up duplicate lib directories, legacy CoachingEntry fields
 
@@ -56,9 +56,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Adding the app to iPhone Home Screen from Safari installs with the correct app name, icon, and splash screen
   4. Trade IDs and coaching entry IDs are UUIDs; the trade entry form rejects NaN values for P&L and R-mult before saving
 **Plans**:
-- [ ] 03-01-PLAN.md — TabErrorBoundary component + per-tab placement in page.tsx (STABLE-01)
-- [ ] 03-02-PLAN.md — UUID migration (3 files), NaN input guard in TradeForm, history cap fix (STABLE-02, STABLE-03, STABLE-04)
-- [ ] 03-03-PLAN.md — PWA manifest.ts, layout.tsx apple-touch-icon, icon PNGs, PWA-03 verification (PWA-01, PWA-02, PWA-03)
+- [x] 03-01-PLAN.md — TabErrorBoundary component + per-tab placement in page.tsx (STABLE-01)
+- [x] 03-02-PLAN.md — UUID migration (3 files), NaN input guard in TradeForm, history cap fix (STABLE-02, STABLE-03, STABLE-04)
+- [x] 03-03-PLAN.md — PWA manifest.ts, layout.tsx apple-touch-icon, icon PNGs, PWA-03 verification (PWA-01, PWA-02, PWA-03)
 
 ### Phase 4: Stats Refactor & Tests
 **Goal**: Stats.tsx is split into focused, independently testable components; core calculation logic has automated test coverage; TypeScript continues to compile clean

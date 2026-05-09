@@ -64,13 +64,13 @@
 | PERSIST-03 | Phase 2 | Pending |
 | PERSIST-04 | Phase 2 | Pending |
 | PERSIST-05 | Phase 2 | Pending |
-| STABLE-01 | Phase 3 | Pending |
-| STABLE-02 | Phase 3 | Pending |
-| STABLE-03 | Phase 3 | Pending |
-| STABLE-04 | Phase 3 | Pending |
-| PWA-01 | Phase 3 | Pending |
-| PWA-02 | Phase 3 | Pending |
-| PWA-03 | Phase 3 | Pending |
+| STABLE-01 | Phase 3 | Complete |
+| STABLE-02 | Phase 3 | Complete |
+| STABLE-03 | Phase 3 | Complete |
+| STABLE-04 | Phase 3 | Complete |
+| PWA-01 | Phase 3 | Complete |
+| PWA-02 | Phase 3 | Complete |
+| PWA-03 | Phase 3 | Complete |
 
 **Coverage:** 17/17 v1 requirements mapped (100%)
 
