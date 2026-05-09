@@ -1014,7 +1014,7 @@ function ChatView({ activeView, setActiveView }: { activeView: "chat" | "history
       </div>
 
       {/* Input — pinned to bottom of flex column */}
-      <div className="flex-shrink-0 px-3 pb-4 pt-2">
+      <div className="flex-shrink-0 px-3 pb-1 pt-1">
         <div className="flex items-end gap-2.5 rounded-3xl px-4 py-3" style={{ background: "var(--bg3)", border: "1px solid var(--border-accent)", boxShadow: "0 0 0 1px rgba(56,189,248,0.08), 0 0 18px rgba(56,189,248,0.12)" }}>
           <textarea
             ref={textRef}
@@ -1078,7 +1078,7 @@ function PreviewCoachView({ activeView, setActiveView }: { activeView: "chat" | 
       </div>
 
       {/* Disabled input area */}
-      <div className="flex-shrink-0 px-3 pb-4 pt-2" style={{ opacity: 0.4, pointerEvents: "none" }}>
+      <div className="flex-shrink-0 px-3 pb-1 pt-1" style={{ opacity: 0.4, pointerEvents: "none" }}>
         <div className="flex items-end gap-2.5 rounded-3xl px-4 py-3" style={{ background: "var(--bg3)", border: "1px solid var(--border)" }}>
           <textarea
             disabled
