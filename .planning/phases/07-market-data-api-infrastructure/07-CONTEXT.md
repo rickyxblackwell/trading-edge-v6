@@ -208,6 +208,20 @@ All 4 modes share the same tool palette. Nothing is pre-fetched. Claude decides 
 
 Claude's coaching memory (session index, behavior ledger, milestone log, streaks, journal memory, weekly/monthly summaries) continues to be injected into the system context on every call — this is not market data and is not affected by the tool-based architecture change.
 
+### In-Session Message Threading (D-12) — added post-planning
+
+`Coach.tsx` now passes `conversationHistory` (array of `{role, content: string}` pairs, capped at last 18 messages) to route.ts on every call. Route.ts prepends these prior turns to the `messages[]` array sent to Anthropic, giving Claude awareness of the full conversation thread within a session.
+
+**Impact on Phase 7 agentic loop — none.** The loop is entirely server-side:
+1. Claude responds with `tool_use` blocks → route.ts executes tools → feeds `tool_result` back to Claude → Claude produces final text response
+2. Only the final text response (`reply`) is returned to the client
+3. The client stores only final user messages and final assistant text — never intermediate `tool_use`/`tool_result` blocks
+4. On the next turn, `conversationHistory` contains only clean text pairs — the loop's internal messages are never included
+
+**What the executor must preserve:** The agentic loop must resolve to a single final `reply: string` in the JSON response — same as the current single-turn pattern. As long as this contract holds, threading works automatically. No changes to Coach.tsx required for Phase 7.
+
+**Cache interaction:** If Claude calls the RSI tool in turn 3 and the user asks a follow-up in turn 4, Claude will not have the raw tool result in its history — only the summarized text response from turn 3. If it needs to re-fetch, the cache layer returns the result immediately at no API cost. This is the intended behavior.
+
 ### Route Architecture (D-11)
 
 No new route files — everything goes in `app/api/coach/route.ts` (existing pattern).

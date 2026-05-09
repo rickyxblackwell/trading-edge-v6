@@ -1,0 +1,27 @@
+{
+  "mode": "interactive",
+  "granularity": "standard",
+  "parallelization": true,
+  "commit_docs": false,
+  "model_profile": "mix",
+  "models": {
+    "researcher": "claude-sonnet-4-6",
+    "roadmapper": "claude-opus-4-7",
+    "planner": "claude-sonnet-4-6",
+    "executor": "claude-sonnet-4-6",
+    "verifier": "claude-sonnet-4-6",
+    "quick": "claude-haiku-4-5-20251001"
+  },
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true,
+    "nyquist_validation": true,
+    "auto_advance": false,
+    "text_mode": false
+  },
+  "planning": {
+    "commit_docs": false,
+    "note": "Local only — commit at final approval"
+  }
+}

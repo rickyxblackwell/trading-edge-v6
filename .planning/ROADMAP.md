@@ -12,8 +12,8 @@ Trading Edge V6 is a brownfield project — the core app (5 tabs, trade modal, A
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Auth & Security** - Add Supabase auth (email/password), move Gemini API key server-side, guard `/api/coach`
-- [ ] **Phase 2: Supabase Persistence** - Migrate trades, coaching history, and pattern summary from localStorage to Supabase; add V5 data migration
+- [x] **Phase 1: Auth & Security** - Supabase auth (email/password), API keys server-side in user metadata, `/api/coach` guarded with 401
+- [x] **Phase 2: Supabase Persistence** - Trades, coaching history, and pattern summary in Supabase; V5 localStorage migration; localStorage as read cache
 - [ ] **Phase 3: Stability & PWA** - ErrorBoundary, bug fixes (history cap, ID generation, input validation), web app manifest, strategyText reactive state
 - [ ] **Phase 4: Stats Refactor & Tests** - Split Stats.tsx monolith into focused components, add TypeScript test suite for core calculations
 - [ ] **Phase 5: Polish & Cleanup** - Security headers, remove legacy HTML prototypes, clean up duplicate lib directories, legacy CoachingEntry fields
@@ -21,107 +21,107 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Auth & Security
-**Goal**: Users can securely create accounts and log in; the Gemini API key is never exposed to the client; the coach route requires an authenticated session
+**Goal**: Users can securely create accounts and log in; all API keys are server-side only; the coach route requires an authenticated session
 **Depends on**: Nothing (first phase)
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, SEC-01, SEC-02
+**Status**: COMPLETE
 **Success Criteria** (what must be TRUE):
-  1. User can create an account with email/password and log in from the app — no manual API key entry required
-  2. User session persists across browser restarts (no re-login on every visit)
-  3. User can log out from any tab and is returned to the login screen
-  4. `/api/coach` returns 401 for unauthenticated requests; the Gemini API key is a server-side env var never visible in network traffic or client code
-**Plans**: TBD
-**UI hint**: yes
+  1. ✅ User can create an account with email/password and log in — login/signup pages at `app/(auth)/`
+  2. ✅ User session persists across browser restarts via `onAuthStateChange`
+  3. ✅ User can log out and is returned to the login screen
+  4. ✅ `/api/coach` returns 401 for unauthenticated requests; all API keys (Gemini, Claude, AV, Polygon) live in Supabase user metadata server-side
 
 ### Phase 2: Supabase Persistence
-**Goal**: All trade and coaching data lives in Supabase, scoped per authenticated user; localStorage becomes a read cache only; existing V5 data is migrated automatically on first login
+**Goal**: All trade and coaching data lives in Supabase, scoped per authenticated user; localStorage is a read cache; existing V5 data migrates automatically on first login
 **Depends on**: Phase 1
-**Requirements**: PERSIST-01, PERSIST-02, PERSIST-03, PERSIST-04, PERSIST-05
+**Status**: COMPLETE
 **Success Criteria** (what must be TRUE):
-  1. Trades logged in the app appear in the Supabase `trades` table scoped to the logged-in user, and persist across devices and browser clears
-  2. Coaching history and pattern summary survive a full localStorage clear — data reloads from Supabase on next open
-  3. A user with existing V5 localStorage data sees their historical trades and coaching history automatically imported on first authenticated login
-  4. localStorage still serves as a fast read cache — the app renders existing data instantly before Supabase fetch completes
-**Plans**: 4 plans
-Plans:
-- [ ] 02-01-PLAN.md — Phase 2 SQL schema (trades + coaching_entries with RLS) and dashboard schema push
-- [ ] 02-02-PLAN.md — Serialization helpers (camelCase ↔ snake_case), useToast hook, Toast UI component
-- [ ] 02-03-PLAN.md — Augment TradesContext with Supabase reads, optimistic writes, toast/rollback, strategyText state
-- [ ] 02-04-PLAN.md — V5 localStorage → Supabase migration in AuthProvider (idempotent upsert + flag)
+  1. ✅ Trades write to `supabase.from("trades")` with optimistic updates and toast/rollback
+  2. ✅ Coaching history writes to `supabase.from("coaching_entries")` with same pattern
+  3. ✅ `runV5Migration` in AuthProvider upserts all `edge_v5_*` localStorage data idempotently on first login
+  4. ✅ localStorage hydrates first (instant render), Supabase overwrites after auth resolves
+**Plans**:
+- [x] 02-01-PLAN.md — Phase 2 SQL schema (trades + coaching_entries with RLS) and dashboard schema push
+- [x] 02-02-PLAN.md — Serialization helpers (camelCase ↔ snake_case), useToast hook, Toast UI component
+- [x] 02-03-PLAN.md — Augment TradesContext with Supabase reads, optimistic writes, toast/rollback, strategyText state
+- [x] 02-04-PLAN.md — V5 localStorage → Supabase migration in AuthProvider (idempotent upsert + flag)
 
 ### Phase 3: Stability & PWA
 **Goal**: The app shell is resilient to render errors; known bugs are fixed; the app installs correctly as a PWA on iPhone with name, icon, and splash screen
 **Depends on**: Phase 2
+**Status**: Ready to execute
 **Requirements**: STABLE-01, STABLE-02, STABLE-03, STABLE-04, PWA-01, PWA-02, PWA-03
 **Success Criteria** (what must be TRUE):
   1. A render error in one tab shows a fallback UI in that tab only — the other four tabs remain fully functional
   2. Coaching history entries 31–60 persist correctly across reloads (history cap bug is gone)
   3. Adding the app to iPhone Home Screen from Safari installs with the correct app name, icon, and splash screen
   4. Trade IDs and coaching entry IDs are UUIDs; the trade entry form rejects NaN values for P&L and R-mult before saving
-**Plans**: TBD
-**UI hint**: yes
+**Plans**:
+- [ ] 03-01-PLAN.md — TabErrorBoundary component + per-tab placement in page.tsx (STABLE-01)
+- [ ] 03-02-PLAN.md — UUID migration (3 files), NaN input guard in TradeForm, history cap fix (STABLE-02, STABLE-03, STABLE-04)
+- [ ] 03-03-PLAN.md — PWA manifest.ts, layout.tsx apple-touch-icon, icon PNGs, PWA-03 verification (PWA-01, PWA-02, PWA-03)
 
 ### Phase 4: Stats Refactor & Tests
 **Goal**: Stats.tsx is split into focused, independently testable components; core calculation logic has automated test coverage; TypeScript continues to compile clean
 **Depends on**: Phase 3
-**Requirements**: None (engineering quality work — no formal REQ-IDs; addresses CONCERNS.md: Stats.tsx 869+ lines, zero tests)
 **Success Criteria** (what must be TRUE):
   1. Stats.tsx is split into at least 3 focused sub-components (KPI cards, equity curve, confluence bars) each under 250 lines
   2. A test suite covers P&L aggregation, R-mult calculations, and KPI derivations — all tests pass
   3. `npx tsc --noEmit` passes with zero errors after the refactor
-**Plans**: TBD
 
 ### Phase 5: Polish & Cleanup
 **Goal**: Security headers are configured, the repo is clean, and legacy technical debt is addressed
 **Depends on**: Phase 4
-**Requirements**: None (housekeeping work — addresses CONCERNS.md: no security headers, duplicate lib dirs, legacy HTML files, legacy CoachingEntry fields)
 **Success Criteria** (what must be TRUE):
   1. `next.config.ts` emits `X-Frame-Options`, `Content-Security-Policy`, and `X-Content-Type-Options` headers in production
   2. Root `lib/` directory (shadcn scaffold) and large HTML prototype files are removed from the repo
   3. Legacy `CoachingEntry` fields (marketSnapshot, patterns, process, risk, priority, momentum) are cleaned up or formally documented as intentionally retained
-**Plans**: TBD
+
+### Phase 6: AI Coach Enhancement — Memory & Multi-Tool Infrastructure
+**Goal**: Claude Sonnet is the primary AI for all coaching modes; Gemini, Yahoo Finance, FRED, Polygon, and Alpha Vantage are tools Claude can call; 5 persistent memory layers (session index, behavior ledger, milestone log, weakness profile, streak tracking) are scoped per authenticated user
+**Depends on**: Phase 2
+**Status**: COMPLETE
+**Architecture**: Claude Sonnet is the single primary AI. All other providers are tools within the agentic loop — `searchGemini` (web search via Gemini), `fetchYahooFinanceSnapshot`, `fetchFREDSeries`, `fetchPolygonFutures`, `fetchAlphaVantage`. Claude decides which tools to call based on the mode and user query.
+**Success Criteria** (what must be TRUE):
+  1. ✅ All coaching modes (analyze, market-pulse, strategy-review, chat) route through Claude Sonnet as primary
+  2. ✅ All other APIs (Gemini, Yahoo Finance, FRED, Polygon, Alpha Vantage) are tools Claude invokes via the agentic loop
+  3. ✅ Behavior ledger tracks rule violation counts; weakness profile surfaces top-3 failure modes in Analyze responses
+  4. ✅ Streak tracker counts consecutive rule-adherent days and win/loss streaks
+  5. ✅ Milestone log records first profitable day, best R session, streak records
+**Plans**:
+- [x] 06-01-PLAN.md — Types & TradesContext memory state (SessionIndexEntry, BehaviorLedger, MilestoneLog, Streaks + updaters)
+- [x] 06-02-PLAN.md — Claude API integration in /api/coach route (agentic loop, VIOLATIONS parsing, memory computation)
+- [x] 06-03-PLAN.md — Account tab: Claude API key field
+- [x] 06-04-PLAN.md — Coach tab: memory response dispatch + streak display
+
+### Phase 7: Market Data API Infrastructure
+**Goal**: Claude's agentic loop has access to multi-source market data — Alpha Vantage (technical indicators, news sentiment), FRED (macro economic indicators), Polygon.io (CME futures), and Yahoo Finance (live quotes) — via tool calls, with a caching layer that keeps Alpha Vantage usage within the free tier (25 req/day)
+**Depends on**: Phase 6
+**Status**: COMPLETE
+**Success Criteria** (what must be TRUE):
+  1. ✅ Claude can call `fetchAlphaVantage` for RSI, MACD, and news sentiment via the agentic loop
+  2. ✅ Claude can call `fetchFREDSeries` for macro data (Fed funds rate, CPI, NFP, unemployment)
+  3. ✅ Claude can call `fetchPolygonFutures` for CME futures contract data (ES/NQ/MES/MNQ)
+  4. ✅ `unstable_cache` wrappers provide 1hr TTL for AV/intraday and 24hr TTL for Polygon/economic data
+  5. ✅ All tool calls degrade gracefully — empty string returned on failure, loop continues
+**Open item**: No hard request counter enforcing the 25 req/day AV limit — TTL caching mitigates risk for single-user usage
+**Plans**:
+- [x] 07-01-PLAN.md — Wave 0: provision SUPABASE_SERVICE_ROLE_KEY + FRED_API_KEY + verify Polygon CME futures tier
+- [x] 07-02-PLAN.md — Account tab: Alpha Vantage + Polygon.io API key entry cards
+- [x] 07-03-PLAN.md — route.ts module-level helpers: admin client, EOD key, FRED/Polygon/Gemini fetchers, cache wrappers, tool defs, executeToolCall dispatcher
+- [x] 07-04-PLAN.md — route.ts agentic loop: anthropic.messages.create + 10-iteration cap + service-role memory write + rate-limit error responses
+- [x] 07-05-PLAN.md — Coach.tsx rate-limit (yellow) + key-error (red) notification boxes
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 (6 and 7 completed out of order)
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Auth & Security | 0/TBD | Not started | - |
-| 2. Supabase Persistence | 0/TBD | Not started | - |
-| 3. Stability & PWA | 0/TBD | Not started | - |
-| 4. Stats Refactor & Tests | 0/TBD | Not started | - |
-| 5. Polish & Cleanup | 0/TBD | Not started | - |
-
-### Phase 6: AI Coach Enhancement: 3-API Infrastructure & Memory
-
-**Goal**: Route AI coaching through a purpose-built 3-API infrastructure (Claude Sonnet for analyze/chat, Gemini 2.5 Flash for market-pulse/strategy-review, Yahoo Finance for all market data); add 5 persistent memory layers (session index with title recall, behavior ledger, milestone log, weakness profile, streak tracking) scoped per authenticated user
-**Depends on**: Phase 2
-**Requirements**: COACH-01, COACH-02, COACH-03, MEM-01, MEM-02, MEM-03, MEM-04, MEM-05
-**Success Criteria** (what must be TRUE):
-  1. Chat and Analyze modes call Claude Sonnet via Anthropic SDK; Market Pulse and Strategy Review call Gemini 2.5 Flash — routing is transparent to the user
-  2. Market Pulse always fetches live Yahoo Finance data for all watchlist symbols and includes it in the Gemini context before any web search
-  3. Behavior ledger tracks rule violation counts across sessions; weakness profile surfaces top-3 failure modes in every Analyze response
-  4. Streak tracker counts consecutive rule-adherent days and win/loss streaks, displayed in Coach UI
-  5. Milestone log records first profitable day, best R session, streak records — recalled in coaching responses
-**Plans**: 4 plans
-Plans:
-- [x] 06-01-PLAN.md — Types & TradesContext memory state (SessionIndexEntry, BehaviorLedger, MilestoneLog, Streaks + updaters)
-- [ ] 06-02-PLAN.md — Claude API integration in /api/coach route (dual-provider routing, VIOLATIONS parsing, memory computation)
-- [ ] 06-03-PLAN.md — Account tab: Claude API key field
-- [ ] 06-04-PLAN.md — Coach tab: memory response dispatch + streak display
-**UI hint**: yes
-
-### Phase 7: Market Data API Infrastructure
-
-**Goal**: Extend the AI coaching infrastructure with multi-source market data — Alpha Vantage (technical indicators, economic data, news sentiment), FRED API (macro economic indicators), and Polygon.io (CME futures continuous contracts) — injected into coach context with a caching layer that keeps Alpha Vantage usage within the free tier (25 req/day)
-**Depends on**: Phase 6
-**Requirements**: MDATA-01, MDATA-02, MDATA-03, MDATA-04, MDATA-05
-**Success Criteria** (what must be TRUE):
-  1. Market Pulse and Analyze modes receive Alpha Vantage data (technical indicators, news sentiment, economic indicators) injected into Claude's context
-  2. FRED API provides macro data (Fed funds rate, CPI, NFP, unemployment) as a free supplement to AV economic data
-  3. Polygon.io supplies CME futures contract data (ES/NQ/MES/MNQ/YM/MYM) with continuous contract support
-  4. A server-side cache (24hr TTL for economic/daily data, 15min for intraday) keeps AV usage under 25 requests/day
-  5. No API call fails silently — graceful degradation when any data source is unavailable
-**Plans**: TBD
-**UI hint**: no
+| Phase | Status | Completed |
+|-------|--------|-----------|
+| 1. Auth & Security | ✅ Complete | Yes |
+| 2. Supabase Persistence | ✅ Complete | Yes |
+| 3. Stability & PWA | 📋 Planned (3 plans) | - |
+| 4. Stats Refactor & Tests | ⬜ Not started | - |
+| 5. Polish & Cleanup | ⬜ Not started | - |
+| 6. AI Coach Enhancement | ✅ Complete | Yes |
+| 7. Market Data API Infrastructure | ✅ Complete | Yes |
